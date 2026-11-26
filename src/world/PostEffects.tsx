@@ -34,7 +34,7 @@ const PostEffectsInner: React.FC = () => {
   useEffect(() => {
     const envTex = createDesertEnvironmentTexture(gl);
     scene.environment = envTex;
-    (scene as THREE.Scene & { environmentIntensity?: number }).environmentIntensity = 0.85;
+    (scene as THREE.Scene & { environmentIntensity?: number }).environmentIntensity = 0.42;
     return () => {
       if (scene.environment === envTex) scene.environment = null;
       envTex.dispose();
@@ -64,9 +64,9 @@ const PostEffectsInner: React.FC = () => {
       ao.configuration.aoSamples = 16;
       ao.configuration.denoiseSamples = 8;
       ao.configuration.denoiseRadius = 8;
-      ao.configuration.aoRadius = 3.5;
+      ao.configuration.aoRadius = 4.2;
       ao.configuration.distanceFalloff = 1.0;
-      ao.configuration.intensity = 2.2;
+      ao.configuration.intensity = 2.6;
       comp.addPass(ao);
     } catch {
       // If N8AO cannot initialize on a software WebGL driver, continue cleanly with Bloom + ToneMapping
@@ -74,8 +74,8 @@ const PostEffectsInner: React.FC = () => {
 
     const bloom = new BloomEffect({
       mipmapBlur: true,
-      luminanceThreshold: 1.05,
-      intensity: 0.42,
+      luminanceThreshold: 0.95,
+      intensity: 0.48,
       radius: 0.65,
     });
     const toneMapping = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });

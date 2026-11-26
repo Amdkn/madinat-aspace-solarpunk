@@ -21,51 +21,294 @@ page.on('response', (res) => {
 });
 
 await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-await page.waitForFunction(() => Boolean(window.__madinatDebug), null, { timeout: 45000 });
-await page.waitForTimeout(2400);
-console.log('CAPTURE_1_AERIAL');
+await page.waitForFunction(() => Boolean(window.__madinatCtl && window.__madinatDebug), null, { timeout: 45000 });
+await page.evaluate(() => window.__madinatDebug.rebuildGrid());
+await page.waitForTimeout(900);
 
-// 1. Aerial masterplan view of the whole Solarpunk City
-await page.evaluate(() => {
-  window.__madinatDebug.setCameraView([0, 138, 240], [0, 8, 0]);
+const hudFit = await page.evaluate(() => {
+  const btn = document.querySelector('button[title="Smartphone CEO [P]"]');
+  return btn ? btn.getBoundingClientRect().right : 9999;
 });
-await page.waitForTimeout(1200);
-await page.screenshot({ path: path.join(OUT_DIR, 'verified_1_aerial_masterplan.png') });
-console.log('CAPTURE_2_GATE');
+if (hudFit > 1436) {
+  throw new Error('TOP_HUD_CLIPPING_FAIL: right=' + hudFit);
+}
+console.log('TOP_HUD_FIT_PASS: right=' + hudFit.toFixed(1));
 
-// 2. Street-level 3rd person view inside the Royal South Gate looking straight North across Bridge -> Dome
+// 1. CONTRACTUAL VIEW 1 — Human-eye inside Forge R&D Dedicated Studio (collapsed HUD pill + crisp 3D carpets + zero overlap!)
+await page.evaluate(() => {
+  window.__madinatCtl.enterBuilding('rd');
+});
+await page.waitForFunction(() => Boolean(window.__madinatInteriorDebug), null, { timeout: 15000 });
+await page.waitForTimeout(1300);
+await page.screenshot({ path: path.join(OUT_DIR, 'ref_1_forge_rd_interior_human_eye.png') });
+console.log('CAPTURED_REF_1_INTERIOR');
+
+// 1b. Side-3/4 Check proving typing devs' hands reach FORWARD onto keyboards
+await page.evaluate(() => {
+  window.__madinatInteriorDebug.setCameraView([-5.8, 1.55, 3.3], [-3.5, 0.85, 1.1]);
+});
+await page.waitForTimeout(450);
+await page.screenshot({ path: path.join(OUT_DIR, 'ref_1b_dev_hands_check.png') });
+await page.evaluate(() => window.__madinatInteriorDebug.clearCameraView());
+
+// 1c. Test Interior Agent [E] Screen Access right next to desk despite solid desk collider!
+await page.evaluate(() => {
+  window.__madinatInteriorDebug.teleport([-2.3, 0, 1.35]);
+});
+await page.waitForTimeout(300);
+await page.keyboard.press('KeyE');
+await page.waitForSelector('text=TERMINAL HOLON', { timeout: 6000 });
+await page.keyboard.press('Escape');
+console.log('INTERIOR_AGENT_SCREEN_E_ACCESS_PASS');
+
+// 2. CONTRACTUAL VIEW 2 — Full 3-Column Interactive Command Deck inside Forge R&D
+await page.evaluate(() => {
+  window.__madinatCtl.openDept('rd');
+});
+await page.waitForTimeout(400);
+await page.screenshot({ path: path.join(OUT_DIR, 'ref_2_forge_rd_workstation_console.png') });
+console.log('CAPTURED_REF_2_CONSOLE');
+await page.evaluate(() => window.__madinatCtl.openDept(null));
+
+// Coherence & Interior Physics Assertions: switch to 'support' studio -> verify roster + desk/plant/wall solids!
+await page.evaluate(() => window.__madinatCtl.enterBuilding('support'));
+await page.waitForFunction(
+  () => Boolean(window.__madinatInteriorDebug && window.__madinatInteriorDebug.getRosterNames().includes('Copilote // Conciergerie VIP')),
+  null,
+  { timeout: 12000 },
+);
+const interiorTests = await page.evaluate(() => {
+  const dbg = window.__madinatInteriorDebug;
+  const roster = dbg.getRosterNames();
+  const hasSupport = roster.some((n) => n.includes('Copilote')) && !roster.some((n) => n.includes('Kang') || n.includes('Banner'));
+  dbg.teleport([-1.5, 0, 1.35]);
+  const [dxDesk, dzDesk] = dbg.tryWalkTo(-3.9, 1.35);
+  const deskDist = Math.hypot(dxDesk + 3.9, dzDesk - 1.35);
+
+  dbg.teleport([-4.2, 0, -0.3]);
+  const [dxPlant, dzPlant] = dbg.tryWalkTo(-6.1, -0.3);
+  const plantDist = Math.hypot(dxPlant + 6.1, dzPlant + 0.3);
+
+  dbg.teleport([0, 0, -4.0]);
+  const [, wallZ] = dbg.tryWalkTo(0, -12.0);
+  return { hasSupport, deskDist, plantDist, wallZ };
+});
+if (!interiorTests.hasSupport || interiorTests.deskDist < 0.9 || interiorTests.plantDist < 0.78 || interiorTests.wallZ < -7.0) {
+  throw new Error('INTERIOR_COHERENCE_OR_COLLISION_FAIL: ' + JSON.stringify(interiorTests));
+}
+console.log('INTERIOR_COLLISION_AND_COHERENCE_PASS:', JSON.stringify(interiorTests));
+
+// Exit back to Exterior City
+await page.evaluate(() => window.__madinatCtl.enterBuilding(null));
+await page.waitForFunction(() => Boolean(window.__madinatDebug), null, { timeout: 15000 });
+await page.evaluate(() => window.__madinatDebug.rebuildGrid());
+await page.waitForTimeout(800);
+
+// 3. CONTRACTUAL VIEW 3 — Exterior Royal South Gate courtyard, Relocated Heliport eVTOL, Citizens & Clear Bridge Sightline
 await page.evaluate(() => {
   window.__madinatDebug.clearCameraView();
   window.__madinatDebug.teleport([0, 0.35, 184]);
 });
-await page.waitForTimeout(1200);
-await page.screenshot({ path: path.join(OUT_DIR, 'verified_2_royal_gate_supercar.png') });
-console.log('CAPTURE_3_DOME');
+await page.waitForTimeout(800);
+await page.screenshot({ path: path.join(OUT_DIR, 'ref_3_exterior_courtyard_and_gate.png') });
+console.log('CAPTURED_REF_3_GATE');
 
-// 3. Inside Bayt al-Hikma Dome showing clean ceiling, CEO A0 Amadeus, fountain, gong & spiral staircase
-await page.evaluate(() => {
-  window.__madinatDebug.setCameraView([15, 4.4, 17], [0, 3.2, -10]);
+// Exterior Physics Assertions: Parked Supercar, Olive Planter, Lagoon Water, Open South Bridge into Dome, Rotated Dome Pier, Ring 2 Partition Wall
+const exteriorTests = await page.evaluate(() => {
+  const dbg = window.__madinatDebug;
+  dbg.teleport([1.5, 0.35, 179]);
+  const [cx, cz] = dbg.tryWalkTo(5.6, 179);
+  const carDist = Math.hypot(cx - 5.6, cz - 179);
+
+  dbg.teleport([-5.0, 0.35, 172]);
+  const [px, pz] = dbg.tryWalkTo(-9.5, 172);
+  const planterDist = Math.hypot(px + 9.5, pz - 172);
+
+  dbg.teleport([22, 0.35, 81]);
+  const [lx, lz] = dbg.tryWalkTo(22, 55);
+  const lagoonR = Math.hypot(lx, lz);
+
+  dbg.teleport([0, 0.48, 42]);
+  const [, archZ] = dbg.tryWalkTo(0, 24, 90);
+
+  dbg.teleport([8.2, 0.485, 39]);
+  const [pierX, pierZ] = dbg.tryWalkTo(6.55, 32.95, 60);
+  const pierR = Math.hypot(pierX, pierZ);
+
+  dbg.teleport([82.8, 0.35, -39]);
+  const [rwX, rwZ] = dbg.tryWalkTo(82.8, -32, 60);
+  const rwDist = Math.hypot(rwX - 82.8, rwZ + 34.3);
+
+  return { carDist, planterDist, lagoonR, archZ, pierR, rwDist };
 });
-await page.waitForTimeout(1200);
-await page.screenshot({ path: path.join(OUT_DIR, 'verified_3_dome_bayt_interior.png') });
-console.log('CAPTURE_4_PAVILION');
+if (
+  exteriorTests.carDist < 1.4 ||
+  exteriorTests.planterDist < 2.8 ||
+  exteriorTests.lagoonR < 75.5 ||
+  exteriorTests.archZ > 26.0 ||
+  exteriorTests.pierR < 35.8 ||
+  exteriorTests.rwDist < 1.8
+) {
+  throw new Error('EXTERIOR_COLLISION_FAIL: ' + JSON.stringify(exteriorTests));
+}
+console.log('EXTERIOR_COLLISION_PASS:', JSON.stringify(exteriorTests));
 
-// 4. Inside Apple Park x Baghdad Forge R&D Pavilion (Ground level, looking at Agents + 3 Mario-64 Portal Paintings!)
-await page.evaluate(() => {
-  window.__madinatDebug.setCameraView([-107.5, 3.8, 6.5], [-90.5, 2.2, -1.2]);
+// 3e. Spiral Staircase Side Headroom Block + Full Climb up to S0 Observatory (y >= 8.55m!)
+const stairTest = await page.evaluate(() => {
+  const dbg = window.__madinatDebug;
+  // Walk sideways from ground floor into low ramp underside -> must block before clipping under stairs!
+  dbg.teleport([-14.5, 0.485, 9.5]);
+  const [blkX, blkZ, blkY] = dbg.tryWalkTo(-19.5, 11.2, 45);
+
+  // Now walk from bottom opening of spiral ramp all the way around to S0 Sky-Bridge -> Observatory!
+  const alpha = Math.PI / 16;
+  const rMid = 21.4;
+  // Walk all the way around spiral ramp from deg=118° to deg=382° (+22° open mouth landing @ [19.9, 8.1])
+  dbg.teleport([Math.cos((118 * Math.PI) / 180 - alpha) * rMid, 0.485, Math.sin((118 * Math.PI) / 180 - alpha) * rMid]);
+  let lastPos = dbg.getPos();
+  for (let d = 128; d <= 382; d += 10) {
+    const phi = (d * Math.PI) / 180 - alpha;
+    lastPos = dbg.tryWalkTo(Math.cos(phi) * rMid, Math.sin(phi) * rMid, 35);
+  }
+  // Walk radially inward across Sky-Bridge to S0 Observatory deck (local [11.7, 5.4])
+  const bx = 11.7 * Math.cos(alpha) + 5.4 * Math.sin(alpha);
+  const bz = -11.7 * Math.sin(alpha) + 5.4 * Math.cos(alpha);
+  const bridgeEnd = dbg.tryWalkTo(bx, bz, 75);
+  return { blkDist: Math.hypot(blkX + 19.5, blkZ - 11.2), blkY, topAfterRamp: lastPos[2], finalY: bridgeEnd[2], finalPos: bridgeEnd };
 });
-await page.waitForTimeout(1200);
-await page.screenshot({ path: path.join(OUT_DIR, 'verified_4_apple_ring_pavilion.png') });
-console.log('CAPTURE_5_GLB');
-
-// 5. Inspect original .GLB view mode 4 (wait deterministically for 42.5 MB GLB parse & mount)
+if (stairTest.blkY > 1.2 || stairTest.finalY < 8.4) {
+  throw new Error('STAIRCASE_CLIMB_FAIL: ' + JSON.stringify(stairTest));
+}
+console.log('STAIRCASE_CLIMB_TO_S0_PASS:', JSON.stringify(stairTest));
+await page.waitForFunction(() => Boolean(window.__madinatHologramReady), null, { timeout: 10000 });
 await page.evaluate(() => {
-  window.__madinatDebug.setMode('glbInspector');
+  window.__madinatDebug.teleport([4.2, 8.65, 4.6]);
+  window.__madinatDebug.setCameraView([9.4, 11.5, 10.2], [0, 9.5, 1.5]);
 });
-await page.waitForFunction(() => Boolean(window.__madinatGlbLoaded), null, { timeout: 25000 });
-await page.waitForTimeout(1500);
-await page.screenshot({ path: path.join(OUT_DIR, 'verified_5_glb_inspector.png') });
+await page.waitForTimeout(550);
+await page.screenshot({ path: path.join(OUT_DIR, 'ref_3e_spiral_staircase_climb.png') });
 
+// 3c & 3d. CEO Mission Control + 3D Carpet + [E] Screen Access + Camera Spring-Arm Anti-Wall-Occlusion Proof
+await page.evaluate(() => {
+  window.__madinatDebug.teleport([0.85, 0.485, -13.4]);
+  window.__madinatDebug.setCameraView([5.2, 2.2, -7.8], [-0.3, 1.75, -14.4]);
+});
+await page.waitForTimeout(500);
+await page.screenshot({ path: path.join(OUT_DIR, 'ref_3c_dome_carpet_and_mission_control.png') });
+
+await page.evaluate(() => {
+  window.__madinatDebug.teleport([0.85, 0.485, -13.4]);
+});
+await page.waitForTimeout(300);
+await page.keyboard.press('KeyE');
+await page.waitForSelector('text=ÉCRAN SOUVERAIN 7D', { timeout: 6000 });
+await page.keyboard.press('Escape');
+console.log('CEO_SCREEN_E_ACCESS_PASS');
+
+await page.evaluate(() => {
+  window.__madinatDebug.setCamOrbit(Math.PI, 0.22, 7.5);
+});
+await page.waitForTimeout(450);
+const camSpringPos = await page.evaluate(() => window.__madinatDebug.getCameraPos());
+if (camSpringPos[2] < -16.6) {
+  throw new Error('CAMERA_SPRINGARM_WALL_CLIP_FAIL: ' + JSON.stringify(camSpringPos));
+}
+console.log('CAMERA_SPRINGARM_ANTI_OCCLUSION_PASS:', JSON.stringify(camSpringPos));
+await page.screenshot({ path: path.join(OUT_DIR, 'ref_3d_ceo_camera_springarm_proof.png') });
+
+// Ring 2 Glass Wall Camera Spring-Arm Test: inside sector near r=85.8 ArchGlass wall -> camera MUST stay inside!
+await page.evaluate(() => {
+  window.__madinatDebug.teleport([87.5, 0.35, -18.0]);
+  window.__madinatDebug.setCamOrbit(-Math.PI * 0.45, 0.18, 6.0);
+});
+await page.waitForTimeout(450);
+const glassCamR = await page.evaluate(() => {
+  const c = window.__madinatDebug.getCameraPos();
+  return Math.hypot(c[0], c[2]);
+});
+if (glassCamR <= 85.9) {
+  throw new Error('RING2_GLASS_SPRINGARM_FAIL: camR=' + glassCamR);
+}
+console.log('RING2_GLASS_SPRINGARM_PASS: camR=' + glassCamR.toFixed(2));
+
+// 3b. Car Enter -> Drive -> Brake -> Door Exit Clearance E2E Test + Mouse Drag + [R] Reset
+await page.evaluate(() => {
+  window.__madinatDebug.clearCameraView();
+  window.__madinatDebug.teleport([3.0, 0.35, 179]);
+  window.__madinatDebug.enterVehicle('car-south');
+});
+await page.waitForTimeout(250);
+await page.keyboard.down('ShiftLeft');
+await page.keyboard.down('KeyW');
+await page.keyboard.down('KeyA');
+await page.waitForTimeout(1600);
+await page.keyboard.up('KeyW');
+await page.keyboard.up('KeyA');
+await page.keyboard.up('ShiftLeft');
+await page.keyboard.down('Space');
+await page.waitForTimeout(200);
+await page.keyboard.up('Space');
+await page.keyboard.press('KeyE');
+await page.waitForTimeout(350);
+
+const carExitCheck = await page.evaluate(() => {
+  const dbg = window.__madinatDebug;
+  const loc = dbg.getLocomotion();
+  const car = dbg.getVehicles().find((v) => v.id === 'car-south');
+  const p = dbg.getPos();
+  const carMovedDist = Math.hypot(car.position[0] - 5.6, car.position[2] - 179);
+  const exitClearanceDist = Math.hypot(p[0] - car.position[0], p[2] - car.position[2]);
+  return { loc, carMovedDist, exitClearanceDist, carPos: car.position, playerPos: p };
+});
+if (carExitCheck.loc !== 'onFoot' || carExitCheck.carMovedDist < 2.0 || carExitCheck.exitClearanceDist < 1.95) {
+  throw new Error('CAR_DRIVE_OR_EXIT_FAIL: ' + JSON.stringify(carExitCheck));
+}
+console.log('CAR_DRIVE_AND_EXIT_CLEARANCE_PASS:', JSON.stringify(carExitCheck));
+await page.screenshot({ path: path.join(OUT_DIR, 'ref_3b_car_exit_clearance.png') });
+
+// Mouse Camera Orbit + [R] Reset
+await page.keyboard.press('KeyR');
+await page.waitForTimeout(300);
+const yawBefore = await page.evaluate(() => window.__madinatDebug.getCamYaw());
+await page.mouse.move(720, 450);
+await page.mouse.down();
+await page.mouse.move(980, 470, { steps: 10 });
+await page.mouse.up();
+await page.waitForTimeout(450);
+const yawAfterDrag = await page.evaluate(() => window.__madinatDebug.getCamYaw());
+await page.keyboard.press('KeyR');
+await page.waitForTimeout(450);
+const yawAfterReset = await page.evaluate(() => window.__madinatDebug.getCamYaw());
+const dragDelta = Math.abs(Math.atan2(Math.sin(yawAfterDrag - yawBefore), Math.cos(yawAfterDrag - yawBefore)));
+const resetDelta = Math.abs(Math.atan2(Math.sin(yawAfterReset - yawBefore), Math.cos(yawAfterReset - yawBefore)));
+if (dragDelta < 0.08 || dragDelta > 1.2 || resetDelta > 0.35) {
+  throw new Error('MOUSE_ORBIT_OR_RESET_FAIL: ' + JSON.stringify({ yawBefore, yawAfterDrag, yawAfterReset, dragDelta, resetDelta }));
+}
+console.log('CAMERA_ORBIT_AND_RESET_PASS:', JSON.stringify({ yawBefore, yawAfterDrag, yawAfterReset, dragDelta, resetDelta }));
+
+// 3f. Autonomous Two-Way Right-Hand Boulevard Traffic Forward Alignment Proof
+const trafficCheck = await page.evaluate(() => window.__madinatTrafficCheck?.());
+if (!trafficCheck || trafficCheck.count !== 14 || trafficCheck.minDot < 0.999) {
+  throw new Error('AUTONOMOUS_TRAFFIC_FORWARD_FAIL: ' + JSON.stringify(trafficCheck));
+}
+console.log('AUTONOMOUS_TRAFFIC_FORWARD_PASS:', JSON.stringify({ count: trafficCheck.count, minDot: trafficCheck.minDot }));
+await page.evaluate(() => {
+  window.__madinatDebug.teleport([0, 0.35, 198]);
+  window.__madinatDebug.setCameraView([0, 3.6, 152], [28, 1.2, 134]);
+});
+await page.waitForTimeout(550);
+await page.screenshot({ path: path.join(OUT_DIR, 'ref_3f_boulevard_two_way_traffic.png') });
+console.log('CAPTURED_REF_3F_TRAFFIC');
+
+// 4. CONTRACTUAL VIEW 4 — Aerial Solarpunk Bagdad x Apple Park Masterplan (Emerald Lagoon + Golden Hour)
+await page.evaluate(() => {
+  window.__madinatDebug.teleport([0, 0.35, 198]);
+  window.__madinatDebug.setCameraView([0, 128, 228], [0, 8, 0]);
+});
+await page.waitForTimeout(850);
+await page.screenshot({ path: path.join(OUT_DIR, 'ref_4_aerial_solarpunk_city.png') });
+console.log('CAPTURED_REF_4_AERIAL');
+console.log('ALL_PHYSICS_CAMERA_STAIR_SCREEN_E2E_PASSED');
 console.log('VISUAL_CAPTURE_COMPLETE');
 console.log('ERRORS_COUNT:', errors.length);
 if (errors.length > 0) console.log(errors.join('\n'));

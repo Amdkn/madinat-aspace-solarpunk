@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import {
+  DepartmentStream,
   EntropyMission,
   INITIAL_MISSIONS,
   MARKETPLACE_BLUEPRINTS,
   SOLAR_DEPARTMENTS,
 } from '../data/madinatOntology';
+import { resolveExteriorCollisions } from '../world/CollisionEngine';
 
 export type InterfaceMode = 'world3d' | 'garden' | 'desktop' | 'glbInspector';
 export type LocomotionMode = 'onFoot' | 'car' | 'boat' | 'evtol' | 'parachute' | 'tram';
@@ -99,20 +101,26 @@ interface WorldState {
 
   // UI Overlays & Portal Worlds
   activeDepartmentId: string | null;
+  enteredDepartmentId: string | null;
   soukModalOpen: boolean;
   phoneOpen: boolean;
   builderOpen: boolean;
   activePortalId: string | null;
+  inspectedWorkstation: { stream: DepartmentStream; deptId: string | null; isCeo?: boolean } | null;
+  agentDirectives: Record<string, string[]>;
   radioStation: number; // 0=Off, 1=Al-Hikma, 2=Cupertino, 3=Rooftop
   interactionHint: { label: string; action: () => void } | null;
   toastMessage: string | null;
   ceoMessages: { sender: 'user' | 'ceo'; text: string; time: string }[];
 
   openDepartment: (id: string | null) => void;
+  enterDepartmentBuilding: (id: string | null) => void;
   setSoukModalOpen: (v: boolean) => void;
   setPhoneOpen: (v: boolean) => void;
   setBuilderOpen: (v: boolean) => void;
   enterPortal: (portalId: string | null) => void;
+  inspectWorkstation: (ws: { stream: DepartmentStream; deptId: string | null; isCeo?: boolean } | null) => void;
+  sendAgentDirective: (streamId: string, text: string) => void;
   setRadioStation: (idx: number) => void;
   setInteractionHint: (hint: { label: string; action: () => void } | null) => void;
   pushToast: (msg: string) => void;
@@ -125,7 +133,14 @@ interface WorldState {
 
 export const useWorldStore = create<WorldState>((set, get) => ({
   interfaceMode: 'world3d',
-  setInterfaceMode: (m) => set({ interfaceMode: m, activeDepartmentId: null, soukModalOpen: false }),
+  setInterfaceMode: (m) =>
+    set({
+      interfaceMode: m,
+      activeDepartmentId: null,
+      enteredDepartmentId: null,
+      soukModalOpen: false,
+      inspectedWorkstation: null,
+    }),
 
   // Start inside the Royal South Gate Rotunda facing North (rotY = 0) straight through the Gate, Lagoon Bridge & Golden Dome!
   playerPos: [0, 0.35, 184],
@@ -140,15 +155,15 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       id: 'car-south',
       name: 'Supercar Solaire « Al-Mansur GT »',
       kind: 'car',
-      position: [8.5, 0.0, 174],
-      rotationY: 0,
+      position: [5.6, 0.25, 179],
+      rotationY: 0.22,
       color: '#eab308',
     },
     {
       id: 'car-ring',
       name: 'Rover Exécutif « Cupertino One »',
       kind: 'car',
-      position: [134, 0.0, 12],
+      position: [134, 0.12, 12],
       rotationY: 0,
       color: '#f8fafc',
     },
@@ -156,7 +171,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       id: 'boat-lagoon',
       name: 'Glisseur Solaire d’Émeraude',
       kind: 'boat',
-      position: [18, -0.35, 56],
+      position: [18, -0.22, 56],
       rotationY: -Math.PI / 3,
       color: '#14b8a6',
     },
@@ -164,8 +179,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       id: 'evtol-north',
       name: 'Aéronef Biplace « Orville eVTOL »',
       kind: 'evtol',
-      position: [-11, 0.15, 172],
-      rotationY: 0,
+      position: [-15.5, 0.26, 183],
+      rotationY: -0.35,
       color: '#38bdf8',
     },
   ],
@@ -182,7 +197,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       locomotion: v.kind,
       playerPos: [...v.position],
       playerRotY: v.rotationY,
-      toastMessage: `À bord : ${v.name} — [ZQSD/WASD] Piloter · [E] Descendre${v.kind === 'evtol' ? ' · [Espace/C] Altitude · [F] Parachute' : ''}`,
+      teleportTarget: [...v.position],
+      toastMessage: `À bord : ${v.name} — [ZQSD/WASD] Conduire · [Espace] ${v.kind === 'evtol' ? 'Monter' : 'Frein à main'} · [Shift] Boost · [E] Sortir`,
     });
   },
 
@@ -192,10 +208,80 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       s.triggerParachute();
       return;
     }
+    const activeVeh = s.vehicles.find((x) => x.id === s.activeVehicleId);
+    const [vx, vy, vz] = activeVeh ? activeVeh.position : s.playerPos;
+    const vRot = activeVeh ? activeVeh.rotationY : s.playerRotY;
+
+    if (s.locomotion === 'boat') {
+      const ang = Math.atan2(vz, vx);
+      const rSafe = Math.hypot(vx, vz) < 59 ? 40.0 : 78.2;
+      const [rx, rz] = resolveExteriorCollisions(
+        Math.cos(ang) * rSafe,
+        Math.sin(ang) * rSafe,
+        0.35,
+        0.48,
+        'onFoot',
+        s.vehicles,
+        null,
+        s.deployedBlueprints,
+        s.spawnedStructures,
+      );
+      set({
+        locomotion: 'onFoot',
+        activeVehicleId: null,
+        playerPos: [rx, 0.35, rz],
+        playerRotY: vRot,
+        teleportTarget: [rx, 0.35, rz],
+        toastMessage: 'Mode Piéton actif',
+      });
+      return;
+    }
+
+    const sideDist = activeVeh?.kind === 'evtol' ? 3.45 : 2.38;
+    const longDist = 3.55;
+    const exitY = Math.max(0.25, vy > 4 ? 0.35 : vy + 0.1);
+    const candidates: [number, number][] = [
+      [vx - Math.cos(vRot) * sideDist, vz + Math.sin(vRot) * sideDist], // Driver Left Door
+      [vx + Math.cos(vRot) * sideDist, vz - Math.sin(vRot) * sideDist], // Passenger Right Door
+      [vx + Math.sin(vRot) * longDist, vz + Math.cos(vRot) * longDist], // Rear Bumper
+      [vx - Math.sin(vRot) * longDist, vz - Math.cos(vRot) * longDist], // Front Bumper
+    ];
+
+    let bestX = candidates[0][0];
+    let bestZ = candidates[0][1];
+    let bestClearance = -1;
+    for (const [cx, cz] of candidates) {
+      const [rx, rz] = resolveExteriorCollisions(
+        cx,
+        cz,
+        exitY,
+        0.48,
+        'onFoot',
+        s.vehicles,
+        null,
+        s.deployedBlueprints,
+        s.spawnedStructures,
+      );
+      const obsDist = Math.hypot(rx - vx, rz - vz);
+      if (Math.hypot(rx - cx, rz - cz) < 0.45 && obsDist >= 1.85) {
+        bestX = rx;
+        bestZ = rz;
+        bestClearance = obsDist;
+        break;
+      }
+      if (obsDist > bestClearance) {
+        bestX = rx;
+        bestZ = rz;
+        bestClearance = obsDist;
+      }
+    }
+
     set({
       locomotion: 'onFoot',
       activeVehicleId: null,
-      playerPos: [s.playerPos[0] + 2.4, Math.max(0.2, s.playerPos[1] > 4 ? 0.2 : s.playerPos[1]), s.playerPos[2]],
+      playerPos: [bestX, exitY, bestZ],
+      playerRotY: vRot,
+      teleportTarget: [bestX, exitY, bestZ],
       toastMessage: 'Mode Piéton actif',
     });
   },
@@ -242,14 +328,14 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     })),
 
   // Default Golden Hour Solarpunk lighting matching the concept image!
-  solarHour: 16.5,
+  solarHour: 17.05,
   sunPreset: 'golden',
   timelapseSpeed: 0,
   setSunPreset: (p) => {
     const map: Record<SunPreset, number> = {
       dawn: 6.8,
       noon: 12.5,
-      golden: 16.8,
+      golden: 17.05,
       sanctuaryNight: 2.0,
     };
     set({ sunPreset: p, solarHour: map[p], timelapseSpeed: 0 });
@@ -264,7 +350,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   treasuryEur: 364800,
   harmonyStars: 3,
   opsPerSecTotal: 104940,
-  deployedBlueprints: ['saas'],
+  deployedBlueprints: ['saas', 'agency', 'ecommerce'],
   constructingBlueprint: null,
   escrowSignedCount: 0,
   gongRings: 1,
@@ -359,14 +445,14 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         const rad = (dept.angleDeg * Math.PI) / 180;
         const r = 96;
         s.teleportTo(
-          [Math.cos(rad) * r, 0.2, -Math.sin(rad) * r],
+          [Math.cos(rad) * r, 0.35, -Math.sin(rad) * r],
           `[Touche N] Téléporté auprès de ${pending.agentName} (${dept.name})`,
         );
         set({ activeDepartmentId: dept.id });
         return;
       }
     }
-    s.teleportTo([0, 8.6, 4], 'Tous les départements sont autonomes ! Retour à l’Observatoire S0 du Dôme.');
+    s.teleportTo([0, 8.68, 4], 'Tous les départements sont autonomes ! Retour à l’Observatoire S0 du Dôme.');
   },
 
   missions: INITIAL_MISSIONS,
@@ -391,10 +477,13 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     }),
 
   activeDepartmentId: null,
+  enteredDepartmentId: null,
   soukModalOpen: false,
   phoneOpen: false,
   builderOpen: false,
   activePortalId: null,
+  inspectedWorkstation: null,
+  agentDirectives: {},
   radioStation: 0,
   interactionHint: null,
   toastMessage: 'Bienvenue à Madinat Aspace ! Marche vers le Pont Sud, conduis la Supercar [E] ou presse [P] pour ton Smartphone.',
@@ -406,7 +495,17 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     },
   ],
 
-  openDepartment: (id) => set({ activeDepartmentId: id }),
+  openDepartment: (id) => set({ activeDepartmentId: id, inspectedWorkstation: null }),
+  enterDepartmentBuilding: (id) =>
+    set({
+      enteredDepartmentId: id,
+      activeDepartmentId: null,
+      inspectedWorkstation: null,
+      interactionHint: null,
+      toastMessage: id
+        ? `Entrée dans le Studio ${id.toUpperCase()} · [E] Écran Agent / Pupitre · [Échap] Sortir sur l’Avenue.`
+        : 'Sortie sur l’Esplanade Solarpunk de Madinat Aspace.',
+    }),
   setSoukModalOpen: (v) => set({ soukModalOpen: v }),
   setPhoneOpen: (v) => set({ phoneOpen: v }),
   setBuilderOpen: (v) => set({ builderOpen: v }),
@@ -414,10 +513,28 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     set({
       activePortalId: portalId,
       activeDepartmentId: null,
+      inspectedWorkstation: null,
       toastMessage: portalId
         ? 'Téléporté dans le Tableau-Portail 3D ! [Échap] pour revenir dans la Forge R&D.'
         : 'Retour dans la Forge R&D de Madinat Aspace.',
     }),
+  inspectWorkstation: (ws) =>
+    set({
+      inspectedWorkstation: ws,
+      toastMessage: ws ? `Terminal ouvert : ${ws.stream.agentName}` : null,
+    }),
+  sendAgentDirective: (streamId, text) => {
+    const clean = text.trim();
+    if (!clean) return;
+    set((curr) => {
+      const prev = curr.agentDirectives[streamId] ?? [];
+      return {
+        agentDirectives: { ...curr.agentDirectives, [streamId]: [...prev, clean] },
+        opsPerSecTotal: curr.opsPerSecTotal + 850,
+        toastMessage: `Instruction transmise à ${streamId.toUpperCase()} : exécution SOP lancée.`,
+      };
+    });
+  },
   setRadioStation: (idx) => set({ radioStation: idx }),
   setInteractionHint: (hint) => set({ interactionHint: hint }),
   pushToast: (msg) => set({ toastMessage: msg }),

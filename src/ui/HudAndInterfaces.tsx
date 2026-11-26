@@ -15,8 +15,10 @@ import {
 } from 'lucide-react';
 import {
   MARKETPLACE_BLUEPRINTS,
+  PORTAL_GAMES,
   SOLAR_DEPARTMENTS,
 } from '../data/madinatOntology';
+import { DepartmentCommandDeck } from './DepartmentCommandDeck';
 import { useWorldStore } from '../store/useWorldStore';
 import { solarpunkAudio } from '../audio/solarpunkAudio';
 
@@ -35,6 +37,8 @@ export const TopTrimodalBar: React.FC = () => {
   const builderOpen = useWorldStore((s) => s.builderOpen);
   const aerialCam = useWorldStore((s) => s.aerialCam);
   const toggleAerialCamera = useWorldStore((s) => s.toggleAerialCamera);
+  const enteredDepartmentId = useWorldStore((s) => s.enteredDepartmentId);
+  const enterDepartmentBuilding = useWorldStore((s) => s.enterDepartmentBuilding);
   const jumpToNextAgentNeedingYou = useWorldStore((s) => s.jumpToNextAgentNeedingYou);
   const resolvedNeedsIds = useWorldStore((s) => s.resolvedNeedsIds);
 
@@ -47,64 +51,67 @@ export const TopTrimodalBar: React.FC = () => {
     <div
       style={{
         position: 'fixed',
-        top: 12,
-        left: 16,
-        right: 16,
-        height: 52,
+        top: 10,
+        left: 12,
+        right: 12,
+        height: 48,
         zIndex: 50,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 16px',
-        background: 'rgba(12, 19, 28, 0.86)',
+        padding: '0 10px',
+        background: 'rgba(12, 19, 28, 0.88)',
         backdropFilter: 'blur(14px)',
-        borderRadius: 14,
-        border: '1px solid rgba(212, 162, 76, 0.38)',
+        borderRadius: 13,
+        border: '1px solid rgba(212, 162, 76, 0.42)',
         boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+        overflow: 'hidden',
       }}
     >
       {/* Brand + Trimodal Tabs */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
           <div
             style={{
-              width: 28,
-              height: 28,
-              borderRadius: 8,
+              width: 26,
+              height: 26,
+              borderRadius: 7,
               background: 'linear-gradient(135deg, #f59e0b, #0d9488)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontWeight: 900,
               color: '#0f172a',
-              fontSize: 14,
+              fontSize: 13,
+              flexShrink: 0,
             }}
           >
             A
           </div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: 0.6, color: '#fef3c7' }}>
-              ASPACE MARKETPLACE
+          <div style={{ flexShrink: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.4, color: '#fef3c7', whiteSpace: 'nowrap', lineHeight: 1.1 }}>
+              ASPACE · MADINAT
             </div>
-            <div style={{ fontSize: 10, color: '#94a3b8' }}>Madinat Aspace · Bagdad × Apple Park</div>
+            <div style={{ fontSize: 9.5, color: '#94a3b8', whiteSpace: 'nowrap', lineHeight: 1.05 }}>Bagdad × Apple Park</div>
           </div>
         </div>
 
         <div
           style={{
             display: 'flex',
-            gap: 4,
+            gap: 3,
             background: 'rgba(255,255,255,0.05)',
-            padding: 4,
-            borderRadius: 10,
-            marginLeft: 8,
+            padding: 3,
+            borderRadius: 9,
+            marginLeft: 4,
+            flexShrink: 0,
           }}
         >
           {[
-            { id: 'garden', label: '1 · Digital Garden', icon: Layers },
-            { id: 'desktop', label: '2 · Web Desktop', icon: Monitor },
-            { id: 'world3d', label: '3 · 3D GTA Solarpunk', icon: Compass },
-            { id: 'glbInspector', label: '4 · Maquette .GLB', icon: Sparkles },
+            { id: 'garden', label: '1 · Garden', icon: Layers },
+            { id: 'desktop', label: '2 · Desktop', icon: Monitor },
+            { id: 'world3d', label: '3 · Cité 3D', icon: Compass },
+            { id: 'glbInspector', label: '4 · .GLB', icon: Sparkles },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = interfaceMode === tab.id;
@@ -115,18 +122,19 @@ export const TopTrimodalBar: React.FC = () => {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 11px',
-                  borderRadius: 7,
+                  gap: 4,
+                  padding: '4px 7px',
+                  borderRadius: 6,
                   border: 'none',
                   cursor: 'pointer',
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: 700,
+                  whiteSpace: 'nowrap',
                   background: active ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'transparent',
                   color: active ? '#0f172a' : '#cbd5e1',
                 }}
               >
-                <Icon size={14} />
+                <Icon size={13} />
                 {tab.label}
               </button>
             );
@@ -135,7 +143,7 @@ export const TopTrimodalBar: React.FC = () => {
       </div>
 
       {/* Right KPIs, Harmony Stars, Needs You Alert & Quick Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
         {pendingCount > 0 && (
           <button
             onClick={() => {
@@ -146,24 +154,25 @@ export const TopTrimodalBar: React.FC = () => {
               background: 'rgba(245, 158, 11, 0.2)',
               border: '1px solid #f59e0b',
               color: '#fde047',
-              padding: '5px 10px',
-              borderRadius: 8,
-              fontSize: 12,
+              padding: '4px 8px',
+              borderRadius: 7,
+              fontSize: 11,
               fontWeight: 700,
               cursor: 'pointer',
+              whiteSpace: 'nowrap',
             }}
           >
-            🙋 {pendingCount} Agent(s) t’attendent [N]
+            🙋 {pendingCount} S0 [N]
           </button>
         )}
 
-        <div className="font-mono-tech" style={{ fontSize: 12, color: '#5eead4', fontWeight: 600 }}>
-          {opsPerSecTotal.toLocaleString('fr-FR')} ops/s
+        <div className="font-mono-tech" style={{ fontSize: 11, color: '#5eead4', fontWeight: 600, whiteSpace: 'nowrap' }}>
+          {Math.round(opsPerSecTotal / 1000)}k ops/s
         </div>
-        <div className="font-mono-tech" style={{ fontSize: 13, color: '#fde68a', fontWeight: 700 }}>
-          {treasuryEur.toLocaleString('fr-FR')} €
+        <div className="font-mono-tech" style={{ fontSize: 11, color: '#fde68a', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          {Math.round(treasuryEur / 1000)}k €
         </div>
-        <div title="Indice d'Harmonie Solarpunk" style={{ color: '#fbbf24', fontSize: 14, letterSpacing: 2 }}>
+        <div title="Indice d'Harmonie Solarpunk" style={{ color: '#fbbf24', fontSize: 11.5, letterSpacing: 1, whiteSpace: 'nowrap' }}>
           {'★'.repeat(harmonyStars)}
           <span style={{ opacity: 0.25 }}>{'★'.repeat(5 - harmonyStars)}</span>
         </div>
@@ -176,17 +185,36 @@ export const TopTrimodalBar: React.FC = () => {
             background: 'rgba(255,255,255,0.08)',
             color: '#f8fafc',
             border: '1px solid rgba(255,255,255,0.16)',
-            borderRadius: 8,
-            padding: '5px 8px',
-            fontSize: 11,
+            borderRadius: 7,
+            padding: '4px 6px',
+            fontSize: 10.5,
             cursor: 'pointer',
+            whiteSpace: 'nowrap',
           }}
         >
-          <option value="dawn" style={{ background: '#0f172a' }}>🌅 Aube Rose</option>
-          <option value="noon" style={{ background: '#0f172a' }}>☀️ Zénith Solaire</option>
+          <option value="dawn" style={{ background: '#0f172a' }}>🌅 Aube</option>
+          <option value="noon" style={{ background: '#0f172a' }}>☀️ Zénith</option>
           <option value="golden" style={{ background: '#0f172a' }}>✨ Golden Hour</option>
-          <option value="sanctuaryNight" style={{ background: '#0f172a' }}>🌙 Nuit Beth (00h-05h)</option>
+          <option value="sanctuaryNight" style={{ background: '#0f172a' }}>🌙 Nuit Beth</option>
         </select>
+
+        <button
+          onClick={() => enterDepartmentBuilding(enteredDepartmentId ? null : 'rd')}
+          title="Entrer / Sortir du Studio Intérieur Forge R&D (Tranche Verticale GTA)"
+          style={{
+            background: enteredDepartmentId ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(56,189,248,0.18)',
+            color: enteredDepartmentId ? '#0f172a' : '#7dd3fc',
+            border: '1px solid rgba(56,189,248,0.45)',
+            borderRadius: 7,
+            padding: '5px 8px',
+            cursor: 'pointer',
+            fontSize: 11,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {enteredDepartmentId ? '🚪 Sortir' : '🏢 Studio R&D'}
+        </button>
 
         <button
           onClick={toggleAerialCamera}
@@ -195,14 +223,15 @@ export const TopTrimodalBar: React.FC = () => {
             background: aerialCam ? '#38bdf8' : 'rgba(255,255,255,0.08)',
             color: aerialCam ? '#0f172a' : '#f8fafc',
             border: 'none',
-            borderRadius: 8,
-            padding: '6px 10px',
+            borderRadius: 7,
+            padding: '5px 8px',
             cursor: 'pointer',
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: 700,
+            whiteSpace: 'nowrap',
           }}
         >
-          {aerialCam ? '🦅 Vue Sol [G]' : '🛰️ Vue Cité [G]'}
+          {aerialCam ? '🦅 Sol [G]' : '🛰️ Cité [G]'}
         </button>
 
         <button
@@ -212,17 +241,18 @@ export const TopTrimodalBar: React.FC = () => {
             background: builderOpen ? '#14b8a6' : 'rgba(255,255,255,0.08)',
             color: builderOpen ? '#0f172a' : '#f8fafc',
             border: 'none',
-            borderRadius: 8,
-            padding: '6px 10px',
+            borderRadius: 7,
+            padding: '5px 8px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: 5,
-            fontSize: 12,
+            gap: 4,
+            fontSize: 11,
             fontWeight: 700,
+            whiteSpace: 'nowrap',
           }}
         >
-          <Building2 size={14} /> [B] Bâtir
+          <Building2 size={13} /> [B]
         </button>
 
         <button
@@ -232,17 +262,18 @@ export const TopTrimodalBar: React.FC = () => {
             background: phoneOpen ? '#f59e0b' : 'rgba(255,255,255,0.08)',
             color: phoneOpen ? '#0f172a' : '#f8fafc',
             border: 'none',
-            borderRadius: 8,
-            padding: '6px 10px',
+            borderRadius: 7,
+            padding: '5px 8px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: 5,
-            fontSize: 12,
+            gap: 4,
+            fontSize: 11,
             fontWeight: 700,
+            whiteSpace: 'nowrap',
           }}
         >
-          <Smartphone size={14} /> [P]
+          <Smartphone size={13} /> [P]
         </button>
       </div>
     </div>
@@ -255,6 +286,7 @@ export const World3DHudOverlay: React.FC = () => {
   const playerRotY = useWorldStore((s) => s.playerRotY);
   const locomotion = useWorldStore((s) => s.locomotion);
   const interactionHint = useWorldStore((s) => s.interactionHint);
+  const aerialCam = useWorldStore((s) => s.aerialCam);
   const toastMessage = useWorldStore((s) => s.toastMessage);
   const missions = useWorldStore((s) => s.missions);
   const completedMissionIds = useWorldStore((s) => s.completedMissionIds);
@@ -271,6 +303,18 @@ export const World3DHudOverlay: React.FC = () => {
   const deployBlueprint = useWorldStore((s) => s.deployBlueprint);
   const phoneOpen = useWorldStore((s) => s.phoneOpen);
   const builderOpen = useWorldStore((s) => s.builderOpen);
+  const enteredDepartmentId = useWorldStore((s) => s.enteredDepartmentId);
+  const enterDepartmentBuilding = useWorldStore((s) => s.enterDepartmentBuilding);
+  const setInterfaceMode = useWorldStore((s) => s.setInterfaceMode);
+  const activePortalId = useWorldStore((s) => s.activePortalId);
+  const inspectedWorkstation = useWorldStore((s) => s.inspectedWorkstation);
+  const inspectWorkstation = useWorldStore((s) => s.inspectWorkstation);
+  const agentDirectives = useWorldStore((s) => s.agentDirectives);
+  const sendAgentDirective = useWorldStore((s) => s.sendAgentDirective);
+  const signEscrow = useWorldStore((s) => s.signEscrow);
+  const setPhoneOpen = useWorldStore((s) => s.setPhoneOpen);
+  const enterPortal = useWorldStore((s) => s.enterPortal);
+  const pushToast = useWorldStore((s) => s.pushToast);
   const spawnStructureInFront = useWorldStore((s) => s.spawnStructureInFront);
   const radioStation = useWorldStore((s) => s.radioStation);
   const setRadioStation = useWorldStore((s) => s.setRadioStation);
@@ -280,8 +324,11 @@ export const World3DHudOverlay: React.FC = () => {
   const sendCeoPrompt = useWorldStore((s) => s.sendCeoPrompt);
 
   const [chatInput, setChatInput] = useState('');
+  const [directiveInput, setDirectiveInput] = useState('');
   const [listeningVoice, setListeningVoice] = useState(false);
+  const [missionsExpanded, setMissionsExpanded] = useState(false);
 
+  void activePortalId;
   const activeDept = SOLAR_DEPARTMENTS.find((d) => d.id === activeDepartmentId) ?? null;
 
   // Map world coordinates [-215..215] to 170x170 radar SVG
@@ -344,87 +391,108 @@ export const World3DHudOverlay: React.FC = () => {
         </div>
       )}
 
-      {/* Right Mission Tracker Card (GTA Solarpunk Objectives) */}
-      <div
+      {/* Right Mission Tracker Toggle Pill & Collapsible Card (Clean Viewport by Default!) */}
+      <button
+        onClick={() => setMissionsExpanded(!missionsExpanded)}
         style={{
           position: 'fixed',
           top: 76,
           right: 16,
-          width: 320,
-          zIndex: 35,
-          background: 'rgba(12, 19, 28, 0.82)',
+          zIndex: 36,
+          background: 'rgba(12, 19, 28, 0.86)',
           backdropFilter: 'blur(12px)',
-          borderRadius: 14,
-          border: '1px solid rgba(255,255,255,0.12)',
-          padding: 14,
+          borderRadius: 999,
+          border: '1px solid rgba(251, 191, 36, 0.42)',
+          padding: '7px 14px',
+          color: '#fde68a',
+          fontSize: 11.5,
+          fontWeight: 700,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: '#fbbf24', letterSpacing: 1 }}>
-            OPÉRATIONS ANTI-ENTROPIE
-          </span>
-          <span style={{ fontSize: 11, color: '#5eead4', fontWeight: 700 }}>
-            {completedMissionIds.length}/{missions.length} complétées
-          </span>
-        </div>
-        {missions.map((m) => {
-          const done = completedMissionIds.includes(m.id);
-          return (
-            <div
-              key={m.id}
-              onClick={() => teleportTo(m.targetPos, `Téléportation rapide -> ${m.title}`)}
-              title="Cliquer pour s'y téléporter instantanément"
-              style={{
-                padding: '8px 10px',
-                borderRadius: 9,
-                marginBottom: 6,
-                background: done ? 'rgba(16, 185, 129, 0.14)' : 'rgba(255,255,255,0.05)',
-                border: `1px solid ${done ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255,255,255,0.08)'}`,
-                cursor: 'pointer',
-              }}
-            >
-              <div style={{ fontSize: 10, color: done ? '#34d399' : '#fbbf24', fontWeight: 700 }}>
-                {done ? '✓ MISSION ACCOMPLIE' : m.code}
-              </div>
-              <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 2, textDecoration: done ? 'line-through' : 'none' }}>
-                {m.title}
-              </div>
-              {!done && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>{m.description}</div>}
-            </div>
-          );
-        })}
+        🎯 Missions ({completedMissionIds.length}/{missions.length}) · Fast-Travel {missionsExpanded ? '▴' : '▾'}
+      </button>
 
-        {/* Quick Fast-Travel Ring Jumps */}
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
-          <button
-            onClick={() => teleportTo([0, 0.4, 18], 'Hall du Grand Dôme (CEO & Recrutement)')}
-            style={miniBtnStyle}
-          >
-            🏛️ Dôme Lobby
-          </button>
-          <button
-            onClick={() => teleportTo([0, 8.7, 6], 'Sommet Observatoire S0 & Hologramme .GLB')}
-            style={miniBtnStyle}
-          >
-            👑 Sommet S0
-          </button>
-          <button
-            onClick={() => teleportTo([-96, 0.3, 0], 'La Forge R&D & Portails Mario 64')}
-            style={miniBtnStyle}
-          >
-            🖼️ Portails R&D
-          </button>
-          <button
-            onClick={() => teleportTo([130, 0.35, 130], 'Grand Souk Aspace Marketplace')}
-            style={miniBtnStyle}
-          >
-            🕌 Grand Souk
-          </button>
+      {missionsExpanded && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 114,
+            right: 16,
+            width: 320,
+            zIndex: 35,
+            background: 'rgba(12, 19, 28, 0.88)',
+            backdropFilter: 'blur(12px)',
+            borderRadius: 14,
+            border: '1px solid rgba(255,255,255,0.12)',
+            padding: 14,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#fbbf24', letterSpacing: 1 }}>
+              OPÉRATIONS ANTI-ENTROPIE
+            </span>
+            <span style={{ fontSize: 11, color: '#5eead4', fontWeight: 700 }}>
+              {completedMissionIds.length}/{missions.length} complétées
+            </span>
+          </div>
+          {missions.map((m) => {
+            const done = completedMissionIds.includes(m.id);
+            return (
+              <div
+                key={m.id}
+                onClick={() => teleportTo(m.targetPos, `Téléportation rapide -> ${m.title}`)}
+                title="Cliquer pour s'y téléporter instantanément"
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 9,
+                  marginBottom: 6,
+                  background: done ? 'rgba(16, 185, 129, 0.14)' : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${done ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255,255,255,0.08)'}`,
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ fontSize: 10, color: done ? '#34d399' : '#fbbf24', fontWeight: 700 }}>
+                  {done ? '✓ MISSION ACCOMPLIE' : m.code}
+                </div>
+                <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 2, textDecoration: done ? 'line-through' : 'none' }}>
+                  {m.title}
+                </div>
+                {!done && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>{m.description}</div>}
+              </div>
+            );
+          })}
+
+          {/* Quick Fast-Travel Ring Jumps */}
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
+            <button
+              onClick={() => teleportTo([0, 0.485, 18], 'Hall du Grand Dôme (CEO & Recrutement)')}
+              style={miniBtnStyle}
+            >
+              🏛️ Dôme Lobby
+            </button>
+            <button
+              onClick={() => teleportTo([0, 8.7, 6], 'Sommet Observatoire S0 & Hologramme .GLB')}
+              style={miniBtnStyle}
+            >
+              👑 Sommet S0
+            </button>
+            <button onClick={() => enterDepartmentBuilding('rd')} style={miniBtnStyle}>
+              🏢 Studio Forge R&D
+            </button>
+            <button
+              onClick={() => teleportTo([130, 0.35, 130], 'Grand Souk Aspace Marketplace')}
+              style={miniBtnStyle}
+            >
+              🕌 Grand Souk
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Bottom-Center Contextual Interaction Prompt [E] */}
-      {interactionHint && (
+      {interactionHint && !aerialCam && (
         <button
           onClick={interactionHint.action}
           style={{
@@ -523,129 +591,64 @@ export const World3DHudOverlay: React.FC = () => {
             lineHeight: 1.6,
           }}
         >
-          <div>
-            <strong style={{ color: '#fde68a' }}>[ZQSD / WASD]</strong> Déplacer ·{' '}
-            <strong style={{ color: '#fde68a' }}>[Shift]</strong> Turbo ·{' '}
-            <strong style={{ color: '#fde68a' }}>[Espace]</strong> Saut / Monter eVTOL
-          </div>
-          <div>
-            <strong style={{ color: '#5eead4' }}>[E]</strong> Véhicule / Pupitre / Portail ·{' '}
-            <strong style={{ color: '#5eead4' }}>[C]</strong> 1ère/3ème pers ·{' '}
-            <strong style={{ color: '#5eead4' }}>[G]</strong> Drone Aérien ·{' '}
-            <strong style={{ color: '#5eead4' }}>[Glisser Souris]</strong> Caméra
+          {locomotion === 'car' ? (
+            <div>
+              <strong style={{ color: '#fde68a' }}>[ZQSD / WASD]</strong> Conduire ·{' '}
+              <strong style={{ color: '#fde68a' }}>[Espace]</strong> Frein à main ·{' '}
+              <strong style={{ color: '#fde68a' }}>[Shift]</strong> Boost ·{' '}
+              <strong style={{ color: '#fde68a' }}>[H]</strong> Klaxon ·{' '}
+              <strong style={{ color: '#5eead4' }}>[E]</strong> Sortir
+            </div>
+          ) : (
+            <div>
+              <strong style={{ color: '#fde68a' }}>[ZQSD / WASD]</strong> Déplacer ·{' '}
+              <strong style={{ color: '#fde68a' }}>[Shift]</strong> Turbo ·{' '}
+              <strong style={{ color: '#fde68a' }}>[Espace]</strong> Saut / Monter eVTOL
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
+            <span>
+              <strong style={{ color: '#5eead4' }}>[E]</strong> Écran / Véhicule / Portail ·{' '}
+              <strong style={{ color: '#5eead4' }}>[C]</strong> 1ère/3ème pers ·{' '}
+              <strong style={{ color: '#5eead4' }}>[G]</strong> Drone Aérien ·{' '}
+              <strong style={{ color: '#5eead4' }}>[Glisser Souris]</strong> Caméra
+            </span>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('madinat:reset-camera'))}
+              style={{
+                background: 'rgba(20, 184, 166, 0.18)',
+                border: '1px solid rgba(94, 234, 212, 0.45)',
+                color: '#5eead4',
+                borderRadius: 6,
+                padding: '2px 8px',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              📷 Recentrer [R]
+            </button>
           </div>
         </div>
       </div>
 
-      {/* DIEGETIC DEPARTMENT EXPLOITATION MODAL (Opened when pressing [E] inside any of the 8 Apple Park Pavilions!) */}
+      {/* 3-COLUMN INTERACTIVE DEPARTMENT COMMAND DECK (CubeFarm × Business-Marketplace /app) */}
       {activeDept && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 60,
-            background: 'rgba(2, 6, 23, 0.65)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backdropFilter: 'blur(6px)',
+        <DepartmentCommandDeck
+          dept={activeDept}
+          enteredDepartmentId={enteredDepartmentId}
+          resolvedNeedsIds={resolvedNeedsIds}
+          onClose={() => openDepartment(null)}
+          onResolveNeed={(id) => {
+            resolveAgentNeed(id);
+            solarpunkAudio.playGoldenGong();
           }}
-          onClick={() => openDepartment(null)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: 660,
-              maxWidth: '92vw',
-              background: '#0f172a',
-              border: `1px solid ${activeDept.color}`,
-              borderRadius: 18,
-              padding: 24,
-              boxShadow: '0 25px 60px rgba(0,0,0,0.65)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 800, color: activeDept.color, letterSpacing: 1.2 }}>
-                  {activeDept.code} · PILIER {activeDept.bridgePillar} · APP REACT : /{activeDept.appSlug}
-                </div>
-                <h2 style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{activeDept.name}</h2>
-                <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 2 }}>
-                  VP Gouverneur : <strong style={{ color: '#f8fafc' }}>{activeDept.vpName}</strong> · Squad :{' '}
-                  {activeDept.squadName} · {activeDept.aiRatio}
-                </div>
-              </div>
-              <button onClick={() => openDepartment(null)} style={closeBtnStyle}>
-                ✕ Fermer [Échap]
-              </button>
-            </div>
-
-            <div
-              className="font-mono-tech"
-              style={{
-                marginTop: 14,
-                padding: '10px 12px',
-                background: '#020617',
-                borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.08)',
-                fontSize: 11.5,
-                color: '#5eead4',
-              }}
-            >
-              {activeDept.terminalLine}
-            </div>
-
-            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {activeDept.streams.map((st) => {
-                const pending = st.needsHuman && !resolvedNeedsIds.includes(st.id);
-                return (
-                  <div
-                    key={st.id}
-                    style={{
-                      padding: 14,
-                      borderRadius: 12,
-                      background: pending ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255,255,255,0.04)',
-                      border: `1px solid ${pending ? '#f59e0b' : 'rgba(255,255,255,0.08)'}`,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 12,
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: 13.5, fontWeight: 700 }}>{st.agentName}</div>
-                      <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 3 }}>{st.task}</div>
-                    </div>
-                    {pending ? (
-                      <button
-                        onClick={() => {
-                          resolveAgentNeed(st.id);
-                          solarpunkAudio.playGoldenGong();
-                        }}
-                        style={{
-                          background: '#f59e0b',
-                          color: '#0f172a',
-                          border: 'none',
-                          borderRadius: 8,
-                          padding: '8px 14px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        Approuver S0 ✓
-                      </button>
-                    ) : (
-                      <span style={{ fontSize: 11.5, color: '#34d399', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        {st.statusLabel}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+          onToggleInterior={() => enterDepartmentBuilding(enteredDepartmentId === activeDept.id ? null : activeDept.id)}
+          onOpenDesktop={() => setInterfaceMode('desktop')}
+          onEnterPortal={(pid) => enterPortal(pid)}
+          onNotify={(msg) => pushToast(msg)}
+        />
       )}
 
       {/* GRAND SOUK MARKETPLACE MODAL (Deploy YAML Blueprints -> Drones build Villa in 3D!) */}
@@ -995,6 +998,179 @@ export const World3DHudOverlay: React.FC = () => {
           </form>
         </div>
       )}
+      {/* INTERACTIVE AGENT & CEO WORKSTATION SCREEN MODAL ([E] / Click any screen!) */}
+      {inspectedWorkstation && (() => {
+        const ws = inspectedWorkstation;
+        const shortName = ws.stream.agentName.split('//')[0].trim();
+        const needsVisa = Boolean(ws.stream.needsHuman && !resolvedNeedsIds.includes(ws.stream.id));
+        const logs = agentDirectives[ws.stream.id] ?? [];
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 62,
+              background: 'rgba(2, 6, 23, 0.68)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backdropFilter: 'blur(6px)',
+            }}
+            onClick={() => inspectWorkstation(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: 680,
+                maxWidth: '94vw',
+                background: '#0b1120',
+                border: `2px solid ${ws.isCeo ? '#f59e0b' : '#14b8a6'}`,
+                borderRadius: 18,
+                padding: 22,
+                boxShadow: '0 25px 60px rgba(0,0,0,0.72)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: ws.isCeo ? '#fbbf24' : '#5eead4', letterSpacing: 1 }}>
+                    {ws.isCeo ? 'ÉCRAN SOUVERAIN 7D · BAYT AL-HIKMA' : `TERMINAL HOLON · ${ws.stream.id.toUpperCase()}`}
+                  </div>
+                  <div style={{ fontSize: 19, fontWeight: 800, marginTop: 3 }}>{ws.stream.agentName}</div>
+                  <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                    Rôle : {ws.stream.role} · {needsVisa ? '🙋 Attente Visa S0' : `✓ ${ws.stream.statusLabel}`}
+                  </div>
+                </div>
+                <button onClick={() => inspectWorkstation(null)} style={closeBtnStyle}>
+                  ✕ Fermer [Échap]
+                </button>
+              </div>
+
+              <div
+                className="font-mono-tech"
+                style={{
+                  marginTop: 14,
+                  background: '#050811',
+                  border: '1px solid rgba(56, 189, 248, 0.28)',
+                  borderRadius: 12,
+                  padding: 14,
+                  fontSize: 12,
+                  lineHeight: 1.55,
+                }}
+              >
+                <div style={{ color: '#38bdf8' }}>● {shortName.toLowerCase()}@madinat-forge — Bridge 11ms · SOC2</div>
+                <div style={{ color: '#e2e8f0', marginTop: 6 }}>Tâche active : {ws.stream.task}</div>
+                {logs.map((entry, li) => (
+                  <div key={li} style={{ color: '#34d399', marginTop: 6 }}>
+                    → Directive S0 exécutée : « {entry} » [200 OK]
+                  </div>
+                ))}
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  sendAgentDirective(ws.stream.id, directiveInput);
+                  setDirectiveInput('');
+                  solarpunkAudio.playChime(true);
+                }}
+                style={{ display: 'flex', gap: 8, marginTop: 14 }}
+              >
+                <input
+                  value={directiveInput}
+                  onChange={(e) => setDirectiveInput(e.target.value)}
+                  placeholder={`Envoyer une instruction directe à ${shortName}...`}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.16)',
+                    borderRadius: 9,
+                    padding: '9px 12px',
+                    color: '#f8fafc',
+                    fontSize: 12.5,
+                  }}
+                />
+                <button
+                  type="submit"
+                  style={{
+                    background: '#14b8a6',
+                    color: '#0f172a',
+                    border: 'none',
+                    borderRadius: 9,
+                    padding: '0 16px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Exécuter →
+                </button>
+              </form>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                {needsVisa && (
+                  <button
+                    onClick={() => {
+                      resolveAgentNeed(ws.stream.id);
+                      solarpunkAudio.playGoldenGong();
+                    }}
+                    style={{
+                      background: '#f59e0b',
+                      color: '#0f172a',
+                      border: 'none',
+                      borderRadius: 9,
+                      padding: '8px 14px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Approuver Visa S0 ✓ (+4 200 €)
+                  </button>
+                )}
+                {ws.isCeo && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setPhoneOpen(true);
+                        inspectWorkstation(null);
+                      }}
+                      style={miniBtnStyle}
+                    >
+                      📱 Ouvrir Smartphone CEO [P]
+                    </button>
+                    <button
+                      onClick={() => {
+                        signEscrow();
+                        solarpunkAudio.playGoldenGong();
+                      }}
+                      style={{
+                        background: 'rgba(245, 158, 11, 0.2)',
+                        border: '1px solid #f59e0b',
+                        color: '#fde68a',
+                        borderRadius: 8,
+                        padding: '7px 12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ⚡ Signer Escrow Souverain R10
+                    </button>
+                  </>
+                )}
+                {ws.deptId && (
+                  <button
+                    onClick={() => {
+                      openDepartment(ws.deptId);
+                    }}
+                    style={miniBtnStyle}
+                  >
+                    📊 Ouvrir Command Deck complet ({ws.deptId.toUpperCase()})
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 };
