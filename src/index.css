@@ -1,0 +1,48 @@
+:root {
+  --sand-ivory: #f9f5eb;
+  --limestone: #efe6d5;
+  --solar-gold: #d4a24c;
+  --solar-amber: #f59e0b;
+  --emerald-lagoon: #0d9488;
+  --sapphire-pv: #1d4ed8;
+  --obsidian-glass: rgba(16, 24, 32, 0.82);
+  --ivory-glass: rgba(251, 248, 241, 0.88);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+html,
+body,
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.font-serif-sacred {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+}
+
+.font-mono-tech {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 162, 76, 0.45);
+  border-radius: 999px;
+}

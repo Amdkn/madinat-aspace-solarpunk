@@ -1,0 +1,4 @@
+node_modules/
+dist/
+public/city_source.glb
+*.log
