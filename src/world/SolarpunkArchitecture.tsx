@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Text, useGLTF } from '@react-three/drei';
+import { Text, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   MARKETPLACE_BLUEPRINTS,
@@ -24,8 +24,10 @@ import {
   CubeFarmWorkstation,
   PavilionRichFurnishings,
   PersianCarpet,
+  PillBillboardManager,
   PillBillboardTag,
 } from './InteriorKitAndWorkstation';
+import { CEO_STREAM, LIVE_WORLD_TELEMETRY, WORLD_LAYOUT } from './worldLayout';
 
 useGLTF.preload('/models/bayt_dome.glb');
 useGLTF.preload('/models/solar_ring_arc.glb');
@@ -38,7 +40,6 @@ const GlbTacticalHologram: React.FC = () => {
   const groupRef = useRef<THREE.Group>(null);
   const astrolabeOuterRef = useRef<THREE.Mesh>(null);
   const astrolabeInnerRef = useRef<THREE.Mesh>(null);
-  const instRef = useRef<THREE.InstancedMesh>(null);
   const [holoData, setHoloData] = useState<{ pos: Float32Array; cols: Float32Array; count: number } | null>(null);
 
   useEffect(() => {
@@ -130,17 +131,21 @@ const GlbTacticalHologram: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    const im = instRef.current;
-    if (!im || !holoData) return;
+  // Build InstancedMesh eagerly with matrices + instanceColor already populated before WebGL compiles material
+  const holoInstancedMesh = useMemo(() => {
+    if (!holoData) return null;
+    const geo = new THREE.BoxGeometry(0.013, 0.032, 0.013);
+    const mat = new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false });
+    const im = new THREE.InstancedMesh(geo, mat, holoData.count);
+    im.frustumCulled = false;
     const dummy = new THREE.Object3D();
     const col = new THREE.Color();
     for (let i = 0; i < holoData.count; i++) {
       const px = holoData.pos[i * 3];
       const py = holoData.pos[i * 3 + 1];
       const pz = holoData.pos[i * 3 + 2];
-      const heightBoost = py > -0.02 ? 1.45 : 0.8;
-      dummy.position.set(px, py + 0.02, pz);
+      const heightBoost = py > -0.02 ? 1.45 : 0.85;
+      dummy.position.set(px, py + 0.025, pz);
       dummy.scale.set(1, heightBoost, 1);
       dummy.updateMatrix();
       im.setMatrixAt(i, dummy.matrix);
@@ -149,7 +154,19 @@ const GlbTacticalHologram: React.FC = () => {
     }
     im.instanceMatrix.needsUpdate = true;
     if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.computeBoundingSphere();
+    return im;
   }, [holoData]);
+
+  useEffect(() => {
+    return () => {
+      if (holoInstancedMesh) {
+        holoInstancedMesh.geometry.dispose();
+        (holoInstancedMesh.material as THREE.Material).dispose();
+        holoInstancedMesh.dispose();
+      }
+    };
+  }, [holoInstancedMesh]);
 
   useFrame((_, dt) => {
     if (groupRef.current) groupRef.current.rotation.y += dt * 0.18;
@@ -167,12 +184,12 @@ const GlbTacticalHologram: React.FC = () => {
         <cylinderGeometry args={[2.95, 3.05, 0.16, 40]} />
         <meshStandardMaterial color="#051021" roughness={0.18} metalness={0.75} />
       </mesh>
-      <mesh position={[0, -0.05, 0]} renderOrder={2} userData={{ ignoreCameraRay: true }}>
+      <mesh position={[0, -0.05, 0]} renderOrder={3} userData={{ ignoreCameraRay: true }}>
         <sphereGeometry args={[3.0, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
         <meshPhysicalMaterial
           color="#041326"
           transparent
-          opacity={0.36}
+          opacity={0.22}
           roughness={0.12}
           metalness={0.25}
           depthWrite={false}
@@ -203,12 +220,7 @@ const GlbTacticalHologram: React.FC = () => {
             <meshBasicMaterial color={ring.col} toneMapped={false} />
           </mesh>
         ))}
-        {holoData && (
-          <instancedMesh ref={instRef} args={[undefined, undefined, holoData.count]} frustumCulled={false}>
-            <boxGeometry args={[0.009, 0.022, 0.009]} />
-            <meshBasicMaterial color="#ffffff" toneMapped={false} />
-          </instancedMesh>
-        )}
+        {holoInstancedMesh && <primitive object={holoInstancedMesh} />}
       </group>
       <PillBillboardTag
         position={[0, 3.72, 0]}
@@ -330,36 +342,30 @@ const CentralBaytAlHikmaDome: React.FC = () => {
       ))}
 
       {/* Ground Floor CEO Executive Station (A0 Amadeus) */}
-      <group position={[0, 0.485, -13.2]}>
+      <group position={[0, WORLD_LAYOUT.DOME.groundY, WORLD_LAYOUT.CEO_STATION.groupZ]}>
         <PersianCarpet position={[0, 0.01, 0.4]} size={[8.2, 5.2]} accentColor="#1e3a8a" />
-        <mesh position={[0, 2.75, -3.6]} userData={{ cameraCollider: true }}>
-          <boxGeometry args={[13.6, 3.2, 0.3]} />
+        <mesh position={[0, 2.55, -3.6]} userData={{ cameraCollider: true }}>
+          <boxGeometry args={[10.4, 2.5, 0.28]} />
           <meshStandardMaterial color="#0f172a" roughness={0.18} metalness={0.6} />
         </mesh>
-        <mesh position={[0, 2.75, -3.44]}>
-          <planeGeometry args={[13.0, 2.75]} />
+        <mesh position={[0, 2.55, -3.45]}>
+          <planeGeometry args={[9.8, 2.1]} />
           <meshStandardMaterial color="#082f49" emissive="#0369a1" emissiveIntensity={0.45} />
         </mesh>
-        <Text position={[0, 3.42, -3.35]} fontSize={0.38} maxWidth={12.4} color="#fde68a" anchorX="center">
+        <Text position={[0, 3.08, -3.38]} fontSize={0.3} maxWidth={9.4} color="#fde68a" anchorX="center">
           BAYT AL-HIKMA · MISSION CONTROL (A0 AMADEUS × SUMMERS)
         </Text>
-        <Text position={[0, 2.48, -3.35]} fontSize={0.27} maxWidth={12.4} color="#5eead4" anchorX="center">
+        <Text position={[0, 2.22, -3.38]} fontSize={0.21} maxWidth={9.4} color="#5eead4" anchorX="center">
           578 HOLONS · 8 PAVILLONS APPLE PARK × BAGDAD · BRIDGE 11ms · SOC2
         </Text>
 
         <CubeFarmWorkstation
-          position={[0, 0, -0.4]}
+          position={[0, 0, WORLD_LAYOUT.CEO_STATION.deskOffsetZ]}
           rotationY={Math.PI}
           deptColor="#e0aa42"
           skinColor="#8d5524"
           isCeo
-          stream={{
-            id: 'ceo-a0',
-            agentName: 'CEO A0 Amadeus // Souverain',
-            role: '7D Orchestrateur',
-            task: 'Supervision des 578 Holons & Bouclier A1-Beth sur Bagdad x Apple Park',
-            statusLabel: '[P] SMARTPHONE',
-          }}
+          stream={CEO_STREAM}
         />
       </group>
 
@@ -434,6 +440,7 @@ const CentralBaytAlHikmaDome: React.FC = () => {
 const LagoonBridgesAndGate: React.FC = () => {
   const solarHour = useWorldStore((s) => s.solarHour);
   const waterMat = useMemo(() => createEmeraldWaterMaterial(), []);
+  useEffect(() => () => waterMat.dispose(), [waterMat]);
   const { scene: gateScene } = useGLTF('/models/gate_and_bridge.glb');
   const { scene: floraScene } = useGLTF('/models/vehicles_and_flora.glb');
 
@@ -679,6 +686,7 @@ const ExteriorRdPortalWall: React.FC = () => {
     () => PORTAL_GAMES.map((pg) => createPortalArtworkTexture(pg.id, pg.title, pg.accent, pg.skyTop, pg.skyBottom)),
     [],
   );
+  useEffect(() => () => portalTextures.forEach((t) => t.dispose()), [portalTextures]);
   return (
     <group position={[89, 2.4, 0]} rotation={[0, Math.PI / 2, 0]} userData={{ cameraCollider: true }}>
       <PillBillboardTag
@@ -708,12 +716,9 @@ const OuterCrownBoulevardAndVillas: React.FC = () => {
   const deployedBlueprints = useWorldStore((s) => s.deployedBlueprints);
   const constructingBlueprint = useWorldStore((s) => s.constructingBlueprint);
   const tickBlueprintConstruction = useWorldStore((s) => s.tickBlueprintConstruction);
-  const rogueDroneAngle = useWorldStore((s) => s.rogueDroneAngle);
   const rogueDroneNeutralized = useWorldStore((s) => s.rogueDroneNeutralized);
-  const tickRogueDrone = useWorldStore((s) => s.tickRogueDrone);
   const timelapseSpeed = useWorldStore((s) => s.timelapseSpeed);
   const setSolarHour = useWorldStore((s) => s.setSolarHour);
-  const solarHour = useWorldStore((s) => s.solarHour);
   const spawnedStructures = useWorldStore((s) => s.spawnedStructures);
 
   const { scene: ringScene } = useGLTF('/models/solar_ring_arc.glb');
@@ -745,13 +750,14 @@ const OuterCrownBoulevardAndVillas: React.FC = () => {
 
   // 14 Real Sculpted Supercars for Ring 3 Two-Way Right-Hand Autonomous Traffic!
   // Raw GLB Supercar front faces +Z -> rotY = Math.atan2(tx, tz) points nose strictly along forward velocity (tx, tz)!
-  const trafficCars = useMemo(() => {
+  const { cars: trafficCars, paints: trafficPaints } = useMemo(() => {
     const bodyProto = vehScene.getObjectByName('Supercar');
     const wheelNames = ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'];
     const wheelProtos = wheelNames.map((n) => vehScene.getObjectByName(n));
     const paintColors = ['#e5a92b', '#faf5eb', '#14b8a6', '#2563eb'];
+    const paints: THREE.MeshPhysicalMaterial[] = [];
 
-    return Array.from({ length: 14 }).map((_, i) => {
+    const cars = Array.from({ length: 14 }).map((_, i) => {
       const g = new THREE.Group();
       const wheels: THREE.Object3D[] = [];
       const customPaint = new THREE.MeshPhysicalMaterial({
@@ -760,6 +766,7 @@ const OuterCrownBoulevardAndVillas: React.FC = () => {
         metalness: 0.82,
         clearcoat: 1.0,
       });
+      paints.push(customPaint);
       if (bodyProto) {
         g.add(applySolarpunkMaterials(bodyProto.clone(true), { CarPaint: customPaint }));
       }
@@ -770,7 +777,7 @@ const OuterCrownBoulevardAndVillas: React.FC = () => {
         wheels.push(wc);
         g.add(wc);
       });
-      const r = i % 2 === 0 ? 128.0 : 139.0;
+      const r = i % 2 === 0 ? WORLD_LAYOUT.BOULEVARD.innerLaneR : WORLD_LAYOUT.BOULEVARD.outerLaneR;
       const angDir = i % 2 === 0 ? 1 : -1;
       const angle = (i / 14) * Math.PI * 2;
       return {
@@ -782,14 +789,19 @@ const OuterCrownBoulevardAndVillas: React.FC = () => {
         speed: 11.5,
       };
     });
+    return { cars, paints };
   }, [vehScene]);
+
+  useEffect(() => () => trafficPaints.forEach((m) => m.dispose()), [trafficPaints]);
 
   const trafficCarRefs = useRef<(THREE.Group | null)[]>([]);
   const tramRef = useRef<THREE.Group>(null);
+  const rogueGroupRef = useRef<THREE.Group>(null);
 
   useEffect(() => {
     (window as unknown as Record<string, unknown>).__madinatTrafficCheck = () => {
       let minDot = 1;
+      let minSameLaneDist = Infinity;
       const summary = trafficCars.map((c, idx) => {
         const g = trafficCarRefs.current[idx];
         const tx = -Math.sin(c.angle) * c.angDir;
@@ -797,9 +809,17 @@ const OuterCrownBoulevardAndVillas: React.FC = () => {
         const rotY = g ? g.rotation.y : Math.atan2(tx, tz);
         const noseDot = Math.sin(rotY) * tx + Math.cos(rotY) * tz;
         if (noseDot < minDot) minDot = noseDot;
+        const cx = Math.cos(c.angle) * c.r;
+        const cz = Math.sin(c.angle) * c.r;
+        for (let j = idx + 1; j < trafficCars.length; j++) {
+          const o = trafficCars[j];
+          if (o.r !== c.r) continue;
+          const d = Math.hypot(Math.cos(o.angle) * o.r - cx, Math.sin(o.angle) * o.r - cz);
+          if (d < minSameLaneDist) minSameLaneDist = d;
+        }
         return { r: c.r, angDir: c.angDir, speed: c.speed, rotY, noseDot };
       });
-      return { count: summary.length, minDot, summary };
+      return { count: summary.length, minDot, minSameLaneDist, summary };
     };
     return () => {
       delete (window as unknown as Record<string, unknown>).__madinatTrafficCheck;
@@ -810,28 +830,68 @@ const OuterCrownBoulevardAndVillas: React.FC = () => {
     const dt = Math.min(rawDt, 0.05);
     const speedMult = timelapseSpeed === 600 ? 18 : timelapseSpeed === 60 ? 5 : 1;
     tickBlueprintConstruction(dt * speedMult);
-    tickRogueDrone(dt);
 
-    if (timelapseSpeed > 0) {
-      setSolarHour(solarHour + dt * (timelapseSpeed === 600 ? 2.4 : 0.45));
+    LIVE_WORLD_TELEMETRY.rogueDroneAngle = (LIVE_WORLD_TELEMETRY.rogueDroneAngle + dt * 0.32) % (Math.PI * 2);
+    if (rogueGroupRef.current && !rogueDroneNeutralized) {
+      rogueGroupRef.current.position.set(
+        Math.cos(LIVE_WORLD_TELEMETRY.rogueDroneAngle) * 134,
+        2.2,
+        Math.sin(LIVE_WORLD_TELEMETRY.rogueDroneAngle) * 134,
+      );
     }
 
-    const p = useWorldStore.getState().playerPos;
+    if (timelapseSpeed > 0) {
+      setSolarHour(useWorldStore.getState().solarHour + dt * (timelapseSpeed === 600 ? 2.4 : 0.45));
+    }
+
+    const p = LIVE_WORLD_TELEMETRY.playerPos;
+    const vehMap = LIVE_WORLD_TELEMETRY.vehicles;
     LIVE_TRAFFIC_CARS.length = trafficCars.length;
     trafficCars.forEach((c, idx) => {
       const cx = Math.cos(c.angle) * c.r;
       const cz = Math.sin(c.angle) * c.r;
       const tx = -Math.sin(c.angle) * c.angDir;
       const tz = Math.cos(c.angle) * c.angDir;
-      const dx = p[0] - cx;
-      const dz = p[2] - cz;
-      const fwdDist = dx * tx + dz * tz;
-      const latDist = Math.abs(-dx * tz + dz * tx);
-      const blockedAhead = fwdDist > 0.5 && fwdDist < 10.5 && latDist < 3.0;
-      const targetSpd = blockedAhead ? 0 : 11.5 * speedMult;
-      c.speed = THREE.MathUtils.lerp(c.speed, targetSpd, 1 - Math.exp(-(blockedAhead ? 9 : 4) * dt));
+      let targetSpd = 11.5 * speedMult;
+      let minClearanceAhead = Infinity;
+      const obsFwdThresh = 12.0 + (speedMult - 1) * 3.5;
+      const carFwdThresh = 13.5 + (speedMult - 1) * 4.0;
 
-      c.angle += ((c.speed * dt) / c.r) * c.angDir;
+      const checkObstacleAhead = (ox: number, oz: number, latThresh: number, fwdThresh: number) => {
+        const dx = ox - cx;
+        const dz = oz - cz;
+        const fwdDist = dx * tx + dz * tz;
+        const latDist = Math.abs(-dx * tz + dz * tx);
+        if (fwdDist > 0.5 && fwdDist < fwdThresh && latDist < latThresh) {
+          minClearanceAhead = Math.min(minClearanceAhead, Math.max(0, fwdDist - 5.8));
+          return true;
+        }
+        return false;
+      };
+
+      if (checkObstacleAhead(p[0], p[2], 3.0, obsFwdThresh)) {
+        targetSpd = 0;
+      }
+      vehMap.forEach((v) => {
+        if (checkObstacleAhead(v.pos[0], v.pos[2], 3.4, obsFwdThresh)) targetSpd = 0;
+      });
+      for (let oi = 0; oi < trafficCars.length; oi++) {
+        if (oi === idx) continue;
+        const other = trafficCars[oi];
+        if (other.r !== c.r || other.angDir !== c.angDir) continue;
+        const rawDelta = ((other.angle - c.angle) * c.angDir) % (Math.PI * 2);
+        const posDelta = rawDelta < 0 ? rawDelta + Math.PI * 2 : rawDelta;
+        const arcAhead = posDelta * c.r;
+        if (arcAhead > 0.5 && arcAhead < carFwdThresh) {
+          minClearanceAhead = Math.min(minClearanceAhead, Math.max(0, arcAhead - 6.8));
+          targetSpd = Math.min(targetSpd, arcAhead < 7.2 ? 0 : other.speed * 0.85);
+        }
+      }
+
+      c.speed = THREE.MathUtils.lerp(c.speed, targetSpd, 1 - Math.exp(-(targetSpd < c.speed ? 10 : 4) * dt));
+
+      const stepMeters = Math.min(c.speed * dt, minClearanceAhead);
+      c.angle += (stepMeters / c.r) * c.angDir;
       const nx = Math.cos(c.angle) * c.r;
       const nz = Math.sin(c.angle) * c.r;
       const ntx = -Math.sin(c.angle) * c.angDir;
@@ -849,11 +909,11 @@ const OuterCrownBoulevardAndVillas: React.FC = () => {
       LIVE_TRAFFIC_CARS[idx] = { x: nx, z: nz, rotY };
     });
 
-    if (tramRef.current) tramRef.current.rotation.y -= dt * 0.1 * speedMult;
+    if (tramRef.current) {
+      tramRef.current.rotation.y -= dt * 0.1 * speedMult;
+      LIVE_WORLD_TELEMETRY.tramAngle = tramRef.current.rotation.y;
+    }
   });
-
-  const rogueX = Math.cos(rogueDroneAngle) * 134;
-  const rogueZ = Math.sin(rogueDroneAngle) * 134;
 
   return (
     <group>
@@ -920,7 +980,7 @@ const OuterCrownBoulevardAndVillas: React.FC = () => {
 
       {/* Elevated Solar Magnetic Tramway */}
       <group ref={tramRef}>
-        <group position={[143.2, 1.3, 0]}>
+        <group position={[WORLD_LAYOUT.BOULEVARD.tramR, 1.3, 0]}>
           <mesh castShadow material={SHARED_MATERIALS.royalMarble}>
             <boxGeometry args={[2.6, 2.0, 12.0]} />
           </mesh>
@@ -947,7 +1007,14 @@ const OuterCrownBoulevardAndVillas: React.FC = () => {
 
       {/* Rogue Phantom AI Drone Mission 04 */}
       {!rogueDroneNeutralized && (
-        <group position={[rogueX, 2.2, rogueZ]}>
+        <group
+          ref={rogueGroupRef}
+          position={[
+            Math.cos(LIVE_WORLD_TELEMETRY.rogueDroneAngle) * 134,
+            2.2,
+            Math.sin(LIVE_WORLD_TELEMETRY.rogueDroneAngle) * 134,
+          ]}
+        >
           <mesh rotation={[Math.PI / 2, 0, 0]} material={SHARED_MATERIALS.darkMetal} castShadow>
             <torusGeometry args={[1.45, 0.12, 8, 24]} />
           </mesh>
@@ -1228,6 +1295,7 @@ const InstancedTreeBatch: React.FC<{
 export const SolarpunkCityScene: React.FC = () => {
   return (
     <group>
+      <PillBillboardManager />
       <CentralBaytAlHikmaDome />
       <LagoonBridgesAndGate />
       <OuterCrownBoulevardAndVillas />

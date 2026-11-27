@@ -7,6 +7,7 @@ import {
   SOLAR_DEPARTMENTS,
 } from '../data/madinatOntology';
 import { resolveExteriorCollisions } from '../world/CollisionEngine';
+import { LIVE_WORLD_TELEMETRY, WORLD_LAYOUT } from '../world/worldLayout';
 
 export type InterfaceMode = 'world3d' | 'garden' | 'desktop' | 'glbInspector';
 export type LocomotionMode = 'onFoot' | 'car' | 'boat' | 'evtol' | 'parachute' | 'tram';
@@ -59,7 +60,7 @@ interface WorldState {
   exitVehicle: () => void;
   boardTram: () => void;
   triggerParachute: () => void;
-  landOnGround: () => void;
+  landOnGround: (groundY?: number) => void;
   teleportTo: (pos: [number, number, number], toast?: string) => void;
   clearTeleport: () => void;
   updateVehicleTransform: (id: string, pos: [number, number, number], rotY: number) => void;
@@ -163,7 +164,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       id: 'car-ring',
       name: 'Rover Exécutif « Cupertino One »',
       kind: 'car',
-      position: [134, 0.12, 12],
+      position: [124.2, 0.12, 14],
       rotationY: 0,
       color: '#f8fafc',
     },
@@ -192,25 +193,32 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   enterVehicle: (vehicleId) => {
     const v = get().vehicles.find((x) => x.id === vehicleId);
     if (!v) return;
+    const live = LIVE_WORLD_TELEMETRY.vehicles.get(vehicleId);
+    const livePos = live ? ([...live.pos] as [number, number, number]) : ([...v.position] as [number, number, number]);
+    const liveRot = live ? live.rotY : v.rotationY;
+    LIVE_WORLD_TELEMETRY.playerPos = [...livePos];
+    LIVE_WORLD_TELEMETRY.playerRotY = liveRot;
     set({
       activeVehicleId: vehicleId,
       locomotion: v.kind,
-      playerPos: [...v.position],
-      playerRotY: v.rotationY,
-      teleportTarget: [...v.position],
+      playerPos: livePos,
+      playerRotY: liveRot,
+      teleportTarget: livePos,
       toastMessage: `À bord : ${v.name} — [ZQSD/WASD] Conduire · [Espace] ${v.kind === 'evtol' ? 'Monter' : 'Frein à main'} · [Shift] Boost · [E] Sortir`,
     });
   },
 
   exitVehicle: () => {
     const s = get();
-    if (s.locomotion === 'evtol' && s.playerPos[1] > 8) {
+    const curPlayerPos = LIVE_WORLD_TELEMETRY.playerPos;
+    if (s.locomotion === 'evtol' && curPlayerPos[1] > 8) {
       s.triggerParachute();
       return;
     }
     const activeVeh = s.vehicles.find((x) => x.id === s.activeVehicleId);
-    const [vx, vy, vz] = activeVeh ? activeVeh.position : s.playerPos;
-    const vRot = activeVeh ? activeVeh.rotationY : s.playerRotY;
+    const liveVeh = s.activeVehicleId ? LIVE_WORLD_TELEMETRY.vehicles.get(s.activeVehicleId) : undefined;
+    const [vx, vy, vz] = liveVeh ? liveVeh.pos : activeVeh ? activeVeh.position : curPlayerPos;
+    const vRot = liveVeh ? liveVeh.rotY : activeVeh ? activeVeh.rotationY : LIVE_WORLD_TELEMETRY.playerRotY;
 
     if (s.locomotion === 'boat') {
       const ang = Math.atan2(vz, vx);
@@ -226,12 +234,19 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         s.deployedBlueprints,
         s.spawnedStructures,
       );
+      const exitPos: [number, number, number] = [rx, 0.35, rz];
+      LIVE_WORLD_TELEMETRY.playerPos = [...exitPos];
+      LIVE_WORLD_TELEMETRY.playerRotY = vRot;
+      if (activeVeh) LIVE_WORLD_TELEMETRY.vehicles.set(activeVeh.id, { pos: [vx, vy, vz], rotY: vRot });
       set({
         locomotion: 'onFoot',
         activeVehicleId: null,
-        playerPos: [rx, 0.35, rz],
+        vehicles: s.vehicles.map((v) =>
+          v.id === activeVeh?.id ? { ...v, position: [vx, vy, vz], rotationY: vRot } : v,
+        ),
+        playerPos: exitPos,
         playerRotY: vRot,
-        teleportTarget: [rx, 0.35, rz],
+        teleportTarget: exitPos,
         toastMessage: 'Mode Piéton actif',
       });
       return;
@@ -247,6 +262,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       [vx - Math.sin(vRot) * longDist, vz - Math.cos(vRot) * longDist], // Front Bumper
     ];
 
+    const syncedVehicles = s.vehicles.map((v) =>
+      v.id === activeVeh?.id ? { ...v, position: [vx, vy, vz] as [number, number, number], rotationY: vRot } : v,
+    );
     let bestX = candidates[0][0];
     let bestZ = candidates[0][1];
     let bestClearance = -1;
@@ -257,7 +275,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         exitY,
         0.48,
         'onFoot',
-        s.vehicles,
+        syncedVehicles,
         null,
         s.deployedBlueprints,
         s.spawnedStructures,
@@ -276,12 +294,17 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       }
     }
 
+    const exitPos: [number, number, number] = [bestX, exitY, bestZ];
+    LIVE_WORLD_TELEMETRY.playerPos = [...exitPos];
+    LIVE_WORLD_TELEMETRY.playerRotY = vRot;
+    if (activeVeh) LIVE_WORLD_TELEMETRY.vehicles.set(activeVeh.id, { pos: [vx, vy, vz], rotY: vRot });
     set({
       locomotion: 'onFoot',
       activeVehicleId: null,
-      playerPos: [bestX, exitY, bestZ],
+      vehicles: syncedVehicles,
+      playerPos: exitPos,
       playerRotY: vRot,
-      teleportTarget: [bestX, exitY, bestZ],
+      teleportTarget: exitPos,
       toastMessage: 'Mode Piéton actif',
     });
   },
@@ -294,22 +317,30 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     }),
 
   triggerParachute: () => {
-    const s = get();
+    const cur = LIVE_WORLD_TELEMETRY.playerPos;
+    const chutePos: [number, number, number] = [cur[0], Math.max(cur[1], 42), cur[2]];
+    LIVE_WORLD_TELEMETRY.playerPos = [...chutePos];
     set({
       locomotion: 'parachute',
       activeVehicleId: null,
-      playerPos: [s.playerPos[0], Math.max(s.playerPos[1], 42), s.playerPos[2]],
+      playerPos: chutePos,
+      teleportTarget: chutePos,
       toastMessage: 'Parachute Solaire déployé ! Plane au-dessus de Madinat Aspace !',
     });
   },
 
-  landOnGround: () =>
-    set((s) => ({
+  landOnGround: (groundY = 0.35) => {
+    const cur = LIVE_WORLD_TELEMETRY.playerPos;
+    const landPos: [number, number, number] = [cur[0], groundY, cur[2]];
+    LIVE_WORLD_TELEMETRY.playerPos = [...landPos];
+    set({
       locomotion: 'onFoot',
-      playerPos: [s.playerPos[0], 0.2, s.playerPos[2]],
-    })),
+      playerPos: landPos,
+    });
+  },
 
-  teleportTo: (pos, toast) =>
+  teleportTo: (pos, toast) => {
+    LIVE_WORLD_TELEMETRY.playerPos = [...pos];
     set({
       locomotion: 'onFoot',
       activeVehicleId: null,
@@ -318,7 +349,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       activePortalId: null,
       interfaceMode: 'world3d',
       toastMessage: toast ?? 'Téléportation spatiale effectuée',
-    }),
+    });
+  },
 
   clearTeleport: () => set({ teleportTarget: null }),
 
@@ -462,7 +494,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   tickRogueDrone: (dt) => {
     const s = get();
     if (s.rogueDroneNeutralized) return;
-    set({ rogueDroneAngle: (s.rogueDroneAngle + dt * 0.32) % (Math.PI * 2) });
+    LIVE_WORLD_TELEMETRY.rogueDroneAngle = (LIVE_WORLD_TELEMETRY.rogueDroneAngle + dt * 0.32) % (Math.PI * 2);
   },
   neutralizeRogueDrone: () =>
     set((s) => {
@@ -585,8 +617,28 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   spawnStructureInFront: (kind, customLabel) => {
     const s = get();
     const dist = 12;
-    const x = s.playerPos[0] - Math.sin(s.playerRotY) * dist;
-    const z = s.playerPos[2] - Math.cos(s.playerRotY) * dist;
+    const pPos = LIVE_WORLD_TELEMETRY.playerPos;
+    const pRot = LIVE_WORLD_TELEMETRY.playerRotY;
+    const wantX = pPos[0] - Math.sin(pRot) * dist;
+    const wantZ = pPos[2] - Math.cos(pRot) * dist;
+    let [x, z] = resolveExteriorCollisions(
+      wantX,
+      wantZ,
+      0.35,
+      3.8,
+      'onFoot',
+      s.vehicles,
+      s.activeVehicleId,
+      s.deployedBlueprints,
+      s.spawnedStructures,
+    );
+    const rSpawn = Math.hypot(x, z);
+    if (rSpawn > WORLD_LAYOUT.LAGOON.innerWallR - 3.8 && rSpawn < WORLD_LAYOUT.LAGOON.outerWallR + 3.8) {
+      const targetR = rSpawn < 59 ? WORLD_LAYOUT.LAGOON.innerWallR - 4.0 : WORLD_LAYOUT.LAGOON.outerWallR + 4.0;
+      const sc = targetR / (rSpawn || 1);
+      x *= sc;
+      z *= sc;
+    }
     const labels: Record<SpawnedStructure['kind'], string> = {
       pavilion: 'Kiosque Solaire Néo-Abbasside',
       fountain: 'Fontaine Fraîcheur Qanat',
@@ -598,7 +650,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       kind,
       label: customLabel ?? labels[kind],
       position: [x, 0, z],
-      rotationY: s.playerRotY,
+      rotationY: pRot,
     };
     set({
       spawnedStructures: [...s.spawnedStructures, item],

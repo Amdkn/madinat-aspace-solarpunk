@@ -671,30 +671,29 @@ export function createEmeraldWaterMaterial(): THREE.ShaderMaterial {
         float dWz = -sin(vWorldPos.z * 0.25 - uTime * 1.1) * 0.09 + cos(r * 0.45 - uTime * 2.0) * (vWorldPos.z / max(1.0, r)) * 0.06;
         vec3 N = normalize(vec3(-dWx, 1.0, -dWz));
 
-        vec3 deepTeal = mix(vec3(0.02, 0.34, 0.38), vec3(0.02, 0.12, 0.20), uNightFactor);
-        vec3 shallowTurquoise = mix(vec3(0.06, 0.62, 0.56), vec3(0.06, 0.42, 0.48), uNightFactor);
+        vec3 deepTeal = mix(vec3(0.004, 0.11, 0.125), vec3(0.002, 0.02, 0.04), uNightFactor);
+        vec3 shallowTurquoise = mix(vec3(0.010, 0.34, 0.28), vec3(0.006, 0.12, 0.16), uNightFactor);
 
         float edgeInner = 1.0 - smoothstep(41.8, 44.5, r);
         float edgeOuter = smoothstep(73.8, 76.3, r);
         float shore = clamp(edgeInner + edgeOuter, 0.0, 1.0);
 
-        float caust = causticPattern(vWorldPos.xz * 0.09);
-        vec3 goldCaustic = mix(vec3(0.95, 0.82, 0.42), vec3(0.25, 0.95, 0.85), uNightFactor);
+        float caust = smoothstep(0.62, 0.96, causticPattern(vWorldPos.xz * 0.09));
+        vec3 aquaCaustic = mix(vec3(0.06, 0.46, 0.38), vec3(0.04, 0.58, 0.48), uNightFactor);
 
         vec3 viewDir = normalize(cameraPosition - vWorldPos);
-        float fresnel = pow(1.0 - max(dot(viewDir, N), 0.0), 3.0);
+        float fresnel = pow(1.0 - max(dot(viewDir, N), 0.0), 3.2);
 
         vec3 halfVec = normalize(uSunDir + viewDir);
-        float spec = pow(max(dot(N, halfVec), 0.0), 84.0);
+        float spec = pow(max(dot(N, halfVec), 0.0), 96.0);
 
-        vec3 col = mix(deepTeal, shallowTurquoise, shore * 0.55 + 0.20);
-        col += goldCaustic * caust * 0.36;
-        col = mix(col, mix(vec3(0.96, 0.80, 0.50), vec3(0.08, 0.28, 0.42), uNightFactor), fresnel * 0.28);
-        col = mix(col, vec3(0.86, 0.94, 0.88), shore * 0.26);
-        col = min(col, vec3(0.82));
-        col += vec3(1.0, 0.88, 0.58) * spec * (1.35 - uNightFactor * 0.9);
+        vec3 col = mix(deepTeal, shallowTurquoise, shore * 0.55 + 0.24);
+        col += aquaCaustic * caust * 0.26;
+        col = mix(col, mix(vec3(0.05, 0.34, 0.36), vec3(0.02, 0.10, 0.18), uNightFactor), fresnel * 0.28);
+        col = mix(col, vec3(0.18, 0.58, 0.50), shore * 0.26);
+        col += vec3(0.95, 0.72, 0.34) * spec * (0.88 - uNightFactor * 0.6);
 
-        gl_FragColor = vec4(col, 0.93);
+        gl_FragColor = vec4(col, 0.96);
       }
     `,
   });

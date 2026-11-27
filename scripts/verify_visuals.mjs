@@ -21,9 +21,36 @@ page.on('response', (res) => {
 });
 
 await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-await page.waitForFunction(() => Boolean(window.__madinatCtl && window.__madinatDebug), null, { timeout: 45000 });
-await page.evaluate(() => window.__madinatDebug.rebuildGrid());
-await page.waitForTimeout(900);
+await page.waitForFunction(() => Boolean(window.__madinatCtl && window.__madinatDebug && window.__madinatTelemetry), null, {
+  timeout: 45000,
+});
+await page.waitForTimeout(1000);
+
+// 0. Real Keyboard Walk -> Zero HUD Re-Render Proof (Bug #1 regression guard + auto-indexed collision check)
+await page.evaluate(() => {
+  window.__madinatDebug.teleport([0, 0.35, 118]);
+});
+await page.waitForTimeout(200);
+const walkTelemetryBefore = await page.evaluate(() => ({
+  pos: [...window.__madinatTelemetry.playerPos],
+  hudRenders: window.__madinatTelemetry.hudRenderCount,
+}));
+await page.keyboard.down('KeyW');
+await page.waitForTimeout(1100);
+await page.keyboard.up('KeyW');
+const walkTelemetryAfter = await page.evaluate(() => ({
+  pos: [...window.__madinatTelemetry.playerPos],
+  hudRenders: window.__madinatTelemetry.hudRenderCount,
+}));
+const walkDeltaDist = Math.hypot(
+  walkTelemetryAfter.pos[0] - walkTelemetryBefore.pos[0],
+  walkTelemetryAfter.pos[2] - walkTelemetryBefore.pos[2],
+);
+const hudRenderDelta = walkTelemetryAfter.hudRenders - walkTelemetryBefore.hudRenders;
+if (walkDeltaDist < 2.0 || hudRenderDelta !== 0) {
+  throw new Error('ZERO_HUD_RERENDER_REAL_WALK_FAIL: ' + JSON.stringify({ walkDeltaDist, hudRenderDelta }));
+}
+console.log('ZERO_HUD_RERENDER_REAL_WALK_PASS:', JSON.stringify({ walkDeltaDist, hudRenderDelta }));
 
 const hudFit = await page.evaluate(() => {
   const btn = document.querySelector('button[title="Smartphone CEO [P]"]');
@@ -51,24 +78,45 @@ await page.waitForTimeout(450);
 await page.screenshot({ path: path.join(OUT_DIR, 'ref_1b_dev_hands_check.png') });
 await page.evaluate(() => window.__madinatInteriorDebug.clearCameraView());
 
-// 1c. Test Interior Agent [E] Screen Access right next to desk despite solid desk collider!
+// 1c & 2. Teleport next to desk, capture clean Command Deck (ref_2), then stack TERMINAL HOLON via [E] & prove single-layer Escape!
 await page.evaluate(() => {
   window.__madinatInteriorDebug.teleport([-2.3, 0, 1.35]);
 });
-await page.waitForTimeout(300);
-await page.keyboard.press('KeyE');
-await page.waitForSelector('text=TERMINAL HOLON', { timeout: 6000 });
-await page.keyboard.press('Escape');
-console.log('INTERIOR_AGENT_SCREEN_E_ACCESS_PASS');
-
-// 2. CONTRACTUAL VIEW 2 — Full 3-Column Interactive Command Deck inside Forge R&D
+await page.waitForTimeout(350);
 await page.evaluate(() => {
   window.__madinatCtl.openDept('rd');
 });
+await page.waitForSelector('text=BOOT KERNEL', { timeout: 6000 });
 await page.waitForTimeout(400);
 await page.screenshot({ path: path.join(OUT_DIR, 'ref_2_forge_rd_workstation_console.png') });
 console.log('CAPTURED_REF_2_CONSOLE');
-await page.evaluate(() => window.__madinatCtl.openDept(null));
+
+// Open TERMINAL HOLON on top of active Command Deck (inspectWorkstation preserves activeDepartmentId)
+await page.keyboard.press('KeyE');
+await page.waitForSelector('text=TERMINAL HOLON', { timeout: 6000 });
+
+// First Escape closes only TERMINAL HOLON while Command Deck + Studio stay open
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+const escapeStateAfter1 = await page.evaluate(() => ({
+  hasTerminal: document.body.innerText.includes('TERMINAL HOLON'),
+  hasDeck: document.body.innerText.includes('BOOT KERNEL'),
+  inStudio: Boolean(window.__madinatInteriorDebug),
+}));
+if (escapeStateAfter1.hasTerminal || !escapeStateAfter1.hasDeck || !escapeStateAfter1.inStudio) {
+  throw new Error('ESCAPE_LAYER_1_FAIL: ' + JSON.stringify(escapeStateAfter1));
+}
+// Second Escape closes only Command Deck while Studio stays open
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+const escapeStateAfter2 = await page.evaluate(() => ({
+  hasDeck: document.body.innerText.includes('BOOT KERNEL'),
+  inStudio: Boolean(window.__madinatInteriorDebug),
+}));
+if (escapeStateAfter2.hasDeck || !escapeStateAfter2.inStudio) {
+  throw new Error('ESCAPE_LAYER_2_FAIL: ' + JSON.stringify(escapeStateAfter2));
+}
+console.log('INTERIOR_AGENT_SCREEN_E_ACCESS_AND_ESCAPE_PRIORITY_PASS');
 
 // Coherence & Interior Physics Assertions: switch to 'support' studio -> verify roster + desk/plant/wall solids!
 await page.evaluate(() => window.__madinatCtl.enterBuilding('support'));
@@ -98,11 +146,10 @@ if (!interiorTests.hasSupport || interiorTests.deskDist < 0.9 || interiorTests.p
 }
 console.log('INTERIOR_COLLISION_AND_COHERENCE_PASS:', JSON.stringify(interiorTests));
 
-// Exit back to Exterior City
+// Exit back to Exterior City (auto spatial index builds cleanly via ensureSpatialIndex)
 await page.evaluate(() => window.__madinatCtl.enterBuilding(null));
 await page.waitForFunction(() => Boolean(window.__madinatDebug), null, { timeout: 15000 });
-await page.evaluate(() => window.__madinatDebug.rebuildGrid());
-await page.waitForTimeout(800);
+await page.waitForTimeout(900);
 
 // 3. CONTRACTUAL VIEW 3 — Exterior Royal South Gate courtyard, Relocated Heliport eVTOL, Citizens & Clear Bridge Sightline
 await page.evaluate(() => {
@@ -191,7 +238,7 @@ await page.screenshot({ path: path.join(OUT_DIR, 'ref_3e_spiral_staircase_climb.
 // 3c & 3d. CEO Mission Control + 3D Carpet + [E] Screen Access + Camera Spring-Arm Anti-Wall-Occlusion Proof
 await page.evaluate(() => {
   window.__madinatDebug.teleport([0.85, 0.485, -13.4]);
-  window.__madinatDebug.setCameraView([5.2, 2.2, -7.8], [-0.3, 1.75, -14.4]);
+  window.__madinatDebug.setCameraView([2.6, 2.15, -7.2], [0, 1.8, -14.6]);
 });
 await page.waitForTimeout(500);
 await page.screenshot({ path: path.join(OUT_DIR, 'ref_3c_dome_carpet_and_mission_control.png') });
@@ -286,17 +333,36 @@ if (dragDelta < 0.08 || dragDelta > 1.2 || resetDelta > 0.35) {
 }
 console.log('CAMERA_ORBIT_AND_RESET_PASS:', JSON.stringify({ yawBefore, yawAfterDrag, yawAfterReset, dragDelta, resetDelta }));
 
-// 3f. Autonomous Two-Way Right-Hand Boulevard Traffic Forward Alignment Proof
-const trafficCheck = await page.evaluate(() => window.__madinatTrafficCheck?.());
-if (!trafficCheck || trafficCheck.count !== 14 || trafficCheck.minDot < 0.999) {
-  throw new Error('AUTONOMOUS_TRAFFIC_FORWARD_FAIL: ' + JSON.stringify(trafficCheck));
-}
-console.log('AUTONOMOUS_TRAFFIC_FORWARD_PASS:', JSON.stringify({ count: trafficCheck.count, minDot: trafficCheck.minDot }));
+// 3f. Autonomous Two-Way Right-Hand Boulevard Traffic Forward Alignment + Inter-Car Queueing Proof (60x timelapse forces real catch-up!)
 await page.evaluate(() => {
-  window.__madinatDebug.teleport([0, 0.35, 198]);
-  window.__madinatDebug.setCameraView([0, 3.6, 152], [28, 1.2, 134]);
+  window.__madinatDebug.teleport([139, 0.35, 0]);
+  window.__madinatCtl.setTimelapse(60);
 });
-await page.waitForTimeout(550);
+await page.waitForTimeout(2600);
+const trafficCheck = await page.evaluate(() => window.__madinatTrafficCheck?.());
+if (
+  !trafficCheck ||
+  trafficCheck.count !== 14 ||
+  trafficCheck.minDot < 0.999 ||
+  trafficCheck.minSameLaneDist < 5.5 ||
+  trafficCheck.minSameLaneDist >= 30.0
+) {
+  throw new Error('AUTONOMOUS_TRAFFIC_QUEUE_FAIL: ' + JSON.stringify(trafficCheck));
+}
+console.log(
+  'AUTONOMOUS_TRAFFIC_FORWARD_AND_QUEUE_PASS:',
+  JSON.stringify({
+    count: trafficCheck.count,
+    minDot: trafficCheck.minDot,
+    minSameLaneDist: Number(trafficCheck.minSameLaneDist.toFixed(2)),
+  }),
+);
+await page.evaluate(() => {
+  window.__madinatCtl.setSunPreset('golden');
+  window.__madinatDebug.teleport([146.5, 0.35, -18]);
+  window.__madinatDebug.setCameraView([133.5, 4.4, -14], [135.0, 0.9, 14]);
+});
+await page.waitForTimeout(450);
 await page.screenshot({ path: path.join(OUT_DIR, 'ref_3f_boulevard_two_way_traffic.png') });
 console.log('CAPTURED_REF_3F_TRAFFIC');
 

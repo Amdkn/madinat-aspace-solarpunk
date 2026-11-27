@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Outlines, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -17,11 +17,13 @@ import {
   sweepMove,
   WorldTriangleGrid,
 } from './CollisionEngine';
-
-function dampAngle(current: number, target: number, lambda: number, dt: number): number {
-  const diff = Math.atan2(Math.sin(target - current), Math.cos(target - current));
-  return current + diff * (1 - Math.exp(-lambda * dt));
-}
+import {
+  dampAngle,
+  isTextInputFocused,
+  LIVE_WORLD_TELEMETRY,
+  solveSpringArmPullIn,
+  WORLD_LAYOUT,
+} from './worldLayout';
 import {
   AnimatedShibaDog,
   AutonomousRoomba,
@@ -32,6 +34,7 @@ import {
   KITCHEN_PALETTE,
   LOUNGE_PALETTE,
   PersianCarpet,
+  PillBillboardManager,
   PillBillboardTag,
   PLANT_PALETTE,
   WallKanbanBoard,
@@ -186,6 +189,7 @@ const InteriorStudioRoom: React.FC<{ deptId: string }> = ({ deptId }) => {
   const { scene: floraScene } = useGLTF('/models/vehicles_and_flora.glb');
 
   const parquetTex = useMemo(() => createHoneyOakParquetTexture(), []);
+  useEffect(() => () => parquetTex.dispose(), [parquetTex]);
   const roster = DEPT_STUDIO_ROSTER[dept.id] ?? DEPT_STUDIO_ROSTER.rd;
 
   const seats = useMemo(() => {
@@ -242,19 +246,26 @@ const InteriorStudioRoom: React.FC<{ deptId: string }> = ({ deptId }) => {
       createDepartmentArtTexture(dept, dept.opsPerSec, '#14b8a6'),
     ];
   }, [dept]);
+  useEffect(() => () => wallArtTextures.forEach((t) => t.dispose()), [wallArtTextures]);
 
   const wallMat = toonMat('#eeddc0');
   const beamMat = toonMat('#9c6639');
   const mullionMat = toonMat('#3d2b1f');
-  const glassMat = new THREE.MeshPhysicalMaterial({
-    color: '#cceef4',
-    transparent: true,
-    opacity: 0.24,
-    roughness: 0.08,
-  });
+  const glassMat = useMemo(
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color: '#cceef4',
+        transparent: true,
+        opacity: 0.24,
+        roughness: 0.08,
+      }),
+    [],
+  );
+  useEffect(() => () => glassMat.dispose(), [glassMat]);
 
   return (
     <group>
+      <PillBillboardManager />
       {/* Warm Honey-Oak Herringbone Floor (20m x 15m) */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[20.2, 15.2]} />
@@ -505,6 +516,10 @@ const InteriorStudioRoom: React.FC<{ deptId: string }> = ({ deptId }) => {
   );
 };
 
+const _intTargetPivot = new THREE.Vector3();
+const _intArmDir = new THREE.Vector3();
+const _intRawPos = new THREE.Vector3();
+
 const InteriorPlayerController: React.FC<{ deptId: string }> = ({ deptId }) => {
   const { camera, gl, scene } = useThree();
   const keys = useRef<Record<string, boolean>>({});
@@ -601,19 +616,18 @@ const InteriorPlayerController: React.FC<{ deptId: string }> = ({ deptId }) => {
       lastMouseDragTime.current = 0;
     };
 
+    const clearOverride = () => {
+      debugOverrideCam.current = null;
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (isTextInputFocused(e.target)) return;
       keys.current[e.code] = true;
       const st = useWorldStore.getState();
       if (e.code === 'KeyE' && st.interactionHint) {
         st.interactionHint.action();
       } else if (e.code === 'KeyR') {
         resetCamera();
-      } else if (e.code === 'Escape') {
-        if (st.inspectedWorkstation) st.inspectWorkstation(null);
-        else if (st.activeDepartmentId) st.openDepartment(null);
-        else st.enterDepartmentBuilding(null);
       } else if (e.code === 'KeyP') {
         st.setPhoneOpen(!st.phoneOpen);
       } else if (e.code === 'KeyN') {
@@ -662,6 +676,7 @@ const InteriorPlayerController: React.FC<{ deptId: string }> = ({ deptId }) => {
     window.addEventListener('mousemove', onMove);
     dom.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('madinat:reset-camera', resetCamera);
+    window.addEventListener('madinat:escape-cam', clearOverride);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
@@ -673,6 +688,7 @@ const InteriorPlayerController: React.FC<{ deptId: string }> = ({ deptId }) => {
       window.removeEventListener('mousemove', onMove);
       dom.removeEventListener('wheel', onWheel);
       window.removeEventListener('madinat:reset-camera', resetCamera);
+      window.removeEventListener('madinat:escape-cam', clearOverride);
     };
   }, [gl]);
 
@@ -737,6 +753,10 @@ const InteriorPlayerController: React.FC<{ deptId: string }> = ({ deptId }) => {
       avatarRef.current.position.copy(pos);
       avatarRef.current.rotation.y = rotYRef.current;
     }
+    LIVE_WORLD_TELEMETRY.playerPos[0] = pos.x;
+    LIVE_WORLD_TELEMETRY.playerPos[1] = pos.y;
+    LIVE_WORLD_TELEMETRY.playerPos[2] = pos.z;
+    LIVE_WORLD_TELEMETRY.playerRotY = rotYRef.current;
 
     camYaw.current = dampAngle(camYaw.current, targetYaw.current, 14, dt);
     camPitch.current = THREE.MathUtils.lerp(camPitch.current, targetPitch.current, 1 - Math.exp(-14 * dt));
@@ -745,44 +765,37 @@ const InteriorPlayerController: React.FC<{ deptId: string }> = ({ deptId }) => {
       camera.position.copy(debugOverrideCam.current.pos);
       camera.lookAt(debugOverrideCam.current.lookAt);
     } else {
-      smoothedPivot.current.lerp(new THREE.Vector3(pos.x, pos.y + 1.4, pos.z), 1 - Math.exp(-22 * dt));
+      _intTargetPivot.set(pos.x, pos.y + 1.4, pos.z);
+      smoothedPivot.current.lerp(_intTargetPivot, 1 - Math.exp(-22 * dt));
       const cosP = Math.cos(camPitch.current);
-      const armDir = new THREE.Vector3(
-        Math.sin(camYaw.current) * cosP,
-        Math.sin(camPitch.current),
-        Math.cos(camYaw.current) * cosP,
-      ).normalize();
+      _intArmDir
+        .set(
+          Math.sin(camYaw.current) * cosP,
+          Math.sin(camPitch.current),
+          Math.cos(camYaw.current) * cosP,
+        )
+        .normalize();
 
-      let safeDist = camDist.current;
-      if (occludersRef.current.length > 0) {
-        const rightX = Math.cos(camYaw.current);
-        const rightZ = -Math.sin(camYaw.current);
-        const ray = raycasterRef.current;
-        for (const offset of [0, -0.32, 0.32]) {
-          ray.set(
-            new THREE.Vector3(
-              smoothedPivot.current.x + rightX * offset,
-              smoothedPivot.current.y,
-              smoothedPivot.current.z + rightZ * offset,
-            ),
-            armDir,
-          );
-          ray.near = 0.12;
-          ray.far = camDist.current + 0.42;
-          const hits = ray.intersectObjects(occludersRef.current, false);
-          if (hits.length > 0 && hits[0].distance < camDist.current + 0.38) {
-            safeDist = Math.min(safeDist, Math.max(0.82, hits[0].distance - 0.38));
-          }
-        }
-      }
+      const safeDist = solveSpringArmPullIn(
+        smoothedPivot.current,
+        camYaw.current,
+        _intArmDir,
+        camDist.current,
+        [0, -0.32, 0.32],
+        null,
+        occludersRef.current,
+        raycasterRef.current,
+        0.82,
+        0.38,
+      );
       const pullLambda = safeDist < effectiveDist.current ? 34 : 7;
       effectiveDist.current = THREE.MathUtils.lerp(effectiveDist.current, safeDist, 1 - Math.exp(-pullLambda * dt));
 
-      const rawPos = smoothedPivot.current.clone().addScaledVector(armDir, effectiveDist.current);
-      rawPos.x = THREE.MathUtils.clamp(rawPos.x, -9.45, 9.45);
-      rawPos.y = THREE.MathUtils.clamp(rawPos.y, 1.1, 3.85);
-      rawPos.z = THREE.MathUtils.clamp(rawPos.z, -6.95, 6.95);
-      camera.position.copy(rawPos);
+      _intRawPos.copy(smoothedPivot.current).addScaledVector(_intArmDir, effectiveDist.current);
+      _intRawPos.x = THREE.MathUtils.clamp(_intRawPos.x, -(WORLD_LAYOUT.STUDIO_ROOM.halfW + 0.1), WORLD_LAYOUT.STUDIO_ROOM.halfW + 0.1);
+      _intRawPos.y = THREE.MathUtils.clamp(_intRawPos.y, 1.1, 3.85);
+      _intRawPos.z = THREE.MathUtils.clamp(_intRawPos.z, WORLD_LAYOUT.STUDIO_ROOM.minZ - 0.1, WORLD_LAYOUT.STUDIO_ROOM.maxZ + 0.05);
+      camera.position.copy(_intRawPos);
       camera.lookAt(
         pos.x - Math.sin(camYaw.current) * 0.85,
         pos.y + 1.32,

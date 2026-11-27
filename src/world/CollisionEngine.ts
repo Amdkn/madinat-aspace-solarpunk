@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { MARKETPLACE_BLUEPRINTS, SOLAR_DEPARTMENTS } from '../data/madinatOntology';
 import type { VehicleInstance } from '../store/useWorldStore';
+import { WORLD_LAYOUT } from './worldLayout';
 
 // Single source of truth for studio interior furniture & plant coordinates (shared between meshes & collision!)
 export const INTERIOR_SEAT_LAYOUT: { pos: [number, number, number]; rotY: number; skin: string }[] = [
@@ -23,7 +24,7 @@ export const INTERIOR_PLANT_SPOTS: [number, number, number][] = [
   [-2.1, 0, 6.2],
 ];
 
-const DOME_ROT_ALPHA = Math.PI / 16;
+const DOME_ROT_ALPHA = WORLD_LAYOUT.DOME.rotAlpha;
 
 function collideCircleCircle(
   px: number,
@@ -148,9 +149,9 @@ export function resolveInteriorCollisions(px: number, pz: number, radius = 0.44)
     }
 
     // 5. Perimeter Studio Walls & South Exit Door Jambs
-    x = Math.max(-9.35, Math.min(9.35, x));
-    z = Math.max(-6.85, Math.min(6.9, z));
-    if (z > 6.55 && Math.abs(x) > 1.75) {
+    x = Math.max(-WORLD_LAYOUT.STUDIO_ROOM.halfW, Math.min(WORLD_LAYOUT.STUDIO_ROOM.halfW, x));
+    z = Math.max(WORLD_LAYOUT.STUDIO_ROOM.minZ, Math.min(WORLD_LAYOUT.STUDIO_ROOM.maxZ, z));
+    if (z > 6.55 && Math.abs(x) > WORLD_LAYOUT.STUDIO_ROOM.exitDoorHalfW) {
       z = 6.55;
     }
   }
@@ -196,15 +197,15 @@ export function resolveExteriorCollisions(
 
     // 2. Emerald Lagoon & 4 Vaulted Cardinal Bridge Parapets (r = 41.2 .. 76.8)
     const rLag = Math.hypot(x, z);
-    if (rLag >= 41.2 - radius && rLag <= 76.8 + radius) {
-      const onNSBridgeCorridor = Math.abs(x) < 5.6 && Math.abs(z) > 38;
-      const onEWBridgeCorridor = Math.abs(z) < 5.6 && Math.abs(x) > 38;
+    if (rLag >= WORLD_LAYOUT.LAGOON.innerWallR - radius && rLag <= WORLD_LAYOUT.LAGOON.outerWallR + radius) {
+      const onNSBridgeCorridor = Math.abs(x) < WORLD_LAYOUT.LAGOON.bridgeCorridorHalfW && Math.abs(z) > 38;
+      const onEWBridgeCorridor = Math.abs(z) < WORLD_LAYOUT.LAGOON.bridgeCorridorHalfW && Math.abs(x) > 38;
       if (onNSBridgeCorridor) {
-        x = Math.max(-4.35, Math.min(4.35, x));
+        x = Math.max(-WORLD_LAYOUT.LAGOON.bridgeWalkHalfW, Math.min(WORLD_LAYOUT.LAGOON.bridgeWalkHalfW, x));
       } else if (onEWBridgeCorridor) {
-        z = Math.max(-4.35, Math.min(4.35, z));
+        z = Math.max(-WORLD_LAYOUT.LAGOON.bridgeWalkHalfW, Math.min(WORLD_LAYOUT.LAGOON.bridgeWalkHalfW, z));
       } else if (rLag > 1e-4) {
-        const targetR = rLag < 59 ? 41.2 - radius : 76.8 + radius;
+        const targetR = rLag < 59 ? WORLD_LAYOUT.LAGOON.innerWallR - radius : WORLD_LAYOUT.LAGOON.outerWallR + radius;
         const sc = targetR / rLag;
         x *= sc;
         z *= sc;
@@ -215,11 +216,11 @@ export function resolveExteriorCollisions(
     const rDome = Math.hypot(x, z);
     if (rDome <= 38.5) {
       if (py >= 5.2) {
-        [x, z] = collideCircleCircle(x, z, radius, 0, 0, 3.35);
-        [x, z] = collideCircleCircle(x, z, radius, 0, 10.5, 1.3);
+        [x, z] = collideCircleCircle(x, z, radius, 0, 0, WORLD_LAYOUT.DOME.s0HoloR);
+        [x, z] = collideCircleCircle(x, z, radius, WORLD_LAYOUT.DOME.s0Escrow.x, WORLD_LAYOUT.DOME.s0Escrow.z, WORLD_LAYOUT.DOME.s0Escrow.r);
       } else {
-        [x, z] = collideCircleCircle(x, z, radius, 0, 0, 5.65); // Reflecting pool
-        [x, z] = collideCircleOBB(x, z, radius, 0, -13.6, 1.05, 0.5, 0); // CEO Desk
+        [x, z] = collideCircleCircle(x, z, radius, 0, 0, WORLD_LAYOUT.DOME.poolR); // Reflecting pool
+        [x, z] = collideCircleOBB(x, z, radius, 0, WORLD_LAYOUT.CEO_STATION.deskZ, WORLD_LAYOUT.CEO_STATION.halfW, WORLD_LAYOUT.CEO_STATION.halfD, 0); // CEO Desk
         [x, z] = collideCircleCircle(x, z, radius, 0, -14.36, 0.36); // CEO Chair
         [x, z] = collideCircleOBB(x, z, radius, 0, -16.8, 7.35, 0.35, 0); // Mission Control Wall
         [x, z] = collideCircleOBB(x, z, radius, 14, 6, 1.75, 0.5, 0); // Merge Gong
@@ -251,8 +252,8 @@ export function resolveExteriorCollisions(
     // 4. Ring 2 Apple Park x Baghdad Glass Curtain Walls, 16 Radial Partition Walls & Pavilion Furnishings
     const isRing2Portal = (deg: number) =>
       SOLAR_DEPARTMENTS.some((d) => angularDistDeg(deg, d.angleDeg) < 5.8);
-    [x, z] = collideAnnularBand(x, z, radius, 84.4, 86.9, isRing2Portal);
-    [x, z] = collideAnnularBand(x, z, radius, 109.8, 112.4, isRing2Portal);
+    [x, z] = collideAnnularBand(x, z, radius, WORLD_LAYOUT.RING2.innerGlassMinR, WORLD_LAYOUT.RING2.innerGlassMaxR, isRing2Portal);
+    [x, z] = collideAnnularBand(x, z, radius, WORLD_LAYOUT.RING2.outerGlassMinR, WORLD_LAYOUT.RING2.outerGlassMaxR, isRing2Portal);
 
     // Radial Partition Walls between adjacent 45° Ring 2 sectors (mid-angles at k*45 + 22.5°)
     if (rLag > 82 && rLag < 115) {
@@ -312,7 +313,7 @@ export function resolveExteriorCollisions(
     }
 
     // 5. Royal South & North Gates + Forecourt Colonnades + Flanking Twin Olive Planters
-    for (const gateZ of [158, -158]) {
+    for (const gateZ of [WORLD_LAYOUT.GATES.southZ, WORLD_LAYOUT.GATES.northZ]) {
       if (Math.abs(z - gateZ) < 35 && Math.abs(x) < 25) {
         [x, z] = collideCircleOBB(x, z, radius, -8.8, gateZ, 2.45, 2.45, 0);
         [x, z] = collideCircleOBB(x, z, radius, 8.8, gateZ, 2.45, 2.45, 0);
@@ -337,8 +338,8 @@ export function resolveExteriorCollisions(
         const rel = angularDistDeg(deg, sDeg);
         return rel > 35.2 || (rel > 16.4 && rel < 22.6);
       });
-    [x, z] = collideAnnularBand(x, z, radius, 148.2, 152.2, isRing4Portal);
-    [x, z] = collideAnnularBand(x, z, radius, 170.2, 174.2, isRing4Portal);
+    [x, z] = collideAnnularBand(x, z, radius, WORLD_LAYOUT.RING4.innerMinR, WORLD_LAYOUT.RING4.innerMaxR, isRing4Portal);
+    [x, z] = collideAnnularBand(x, z, radius, WORLD_LAYOUT.RING4.outerMinR, WORLD_LAYOUT.RING4.outerMaxR, isRing4Portal);
 
     if (rLag > 144 && rLag < 178) {
       for (const eDeg of OUTER_RING_END_ANGLES_DEG) {
@@ -347,8 +348,8 @@ export function resolveExteriorCollisions(
           x,
           z,
           radius,
-          Math.cos(eRad) * 161.2,
-          -Math.sin(eRad) * 161.2,
+          Math.cos(eRad) * WORLD_LAYOUT.RING4.endWallR,
+          -Math.sin(eRad) * WORLD_LAYOUT.RING4.endWallR,
           12.8,
           1.8,
           eRad,
@@ -357,12 +358,21 @@ export function resolveExteriorCollisions(
     }
 
     // 7. Grand Souk + Deployed Patrician Villas + User-Spawned Structures
-    [x, z] = collideCircleOBB(x, z, radius, 138, 138, 12.8, 7.3, -Math.PI * 0.75);
+    [x, z] = collideCircleOBB(
+      x,
+      z,
+      radius,
+      WORLD_LAYOUT.GRAND_SOUK.x,
+      WORLD_LAYOUT.GRAND_SOUK.z,
+      WORLD_LAYOUT.GRAND_SOUK.halfW,
+      WORLD_LAYOUT.GRAND_SOUK.halfD,
+      WORLD_LAYOUT.GRAND_SOUK.rotY,
+    );
     for (const bp of MARKETPLACE_BLUEPRINTS) {
       if (!deployedBlueprints.includes(bp.id)) continue;
       const rad = (bp.plotAngleDeg * Math.PI) / 180;
-      const vx = Math.cos(rad) * 196;
-      const vz = -Math.sin(rad) * 196;
+      const vx = Math.cos(rad) * WORLD_LAYOUT.VILLA_R;
+      const vz = -Math.sin(rad) * WORLD_LAYOUT.VILLA_R;
       if (Math.hypot(x - vx, z - vz) < 15) {
         [x, z] = collideCircleOBB(x, z, radius, vx, vz, 9.2, 8.6, rad - Math.PI / 2);
       }
@@ -390,13 +400,35 @@ export function resolveExteriorCollisions(
 
     // 9. Outer City Rampart Boundary
     const rMax = Math.hypot(x, z);
-    if (rMax > 218) {
-      const s = 218 / rMax;
+    if (rMax > WORLD_LAYOUT.CITY_MAX_R) {
+      const s = WORLD_LAYOUT.CITY_MAX_R / rMax;
       x *= s;
       z *= s;
     }
   }
 
+  return [x, z];
+}
+
+// Keep boats inside the Emerald Lagoon and collide cleanly with the 12 cardinal bridge stone piers
+export function resolveBoatLagoonCollisions(px: number, pz: number, radius = 1.4): [number, number] {
+  let x = px;
+  let z = pz;
+  for (let pass = 0; pass < 2; pass++) {
+    const r = Math.hypot(x, z);
+    if (r < WORLD_LAYOUT.LAGOON.boatMinR || r > WORLD_LAYOUT.LAGOON.boatMaxR) {
+      const clamped = THREE.MathUtils.clamp(r, WORLD_LAYOUT.LAGOON.boatMinR + 0.1, WORLD_LAYOUT.LAGOON.boatMaxR - 0.1);
+      const ang = Math.atan2(z, x);
+      x = Math.cos(ang) * clamped;
+      z = Math.sin(ang) * clamped;
+    }
+    for (const pr of WORLD_LAYOUT.LAGOON.bridgePierRadii) {
+      [x, z] = collideCircleCircle(x, z, radius, pr, 0, WORLD_LAYOUT.LAGOON.bridgePierColliderR);
+      [x, z] = collideCircleCircle(x, z, radius, -pr, 0, WORLD_LAYOUT.LAGOON.bridgePierColliderR);
+      [x, z] = collideCircleCircle(x, z, radius, 0, pr, WORLD_LAYOUT.LAGOON.bridgePierColliderR);
+      [x, z] = collideCircleCircle(x, z, radius, 0, -pr, WORLD_LAYOUT.LAGOON.bridgePierColliderR);
+    }
+  }
   return [x, z];
 }
 

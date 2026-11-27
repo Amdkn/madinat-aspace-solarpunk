@@ -9,6 +9,7 @@ import { DedicatedPavilionInterior } from './world/DedicatedPavilionInterior';
 import { GlbMasterpieceInspectorView, PortalMiniWorldCanvas } from './world/PortalMiniWorld';
 import { CompanionFlatInterfaces, TopTrimodalBar, World3DHudOverlay } from './ui/HudAndInterfaces';
 import { PostEffects } from './world/PostEffects';
+import { isTextInputFocused, LIVE_WORLD_TELEMETRY } from './world/worldLayout';
 
 const CircadianAtmosphere: React.FC = () => {
   const solarHour = useWorldStore((s) => s.solarHour);
@@ -88,20 +89,31 @@ export const App: React.FC = () => {
   const enteredDepartmentId = useWorldStore((s) => s.enteredDepartmentId);
 
   useEffect(() => {
+    (window as unknown as Record<string, unknown>).__madinatTelemetry = LIVE_WORLD_TELEMETRY;
     (window as unknown as Record<string, unknown>).__madinatCtl = {
       setMode: (m: 'world3d' | 'garden' | 'desktop' | 'glbInspector') => useWorldStore.getState().setInterfaceMode(m),
       enterBuilding: (id: string | null) => useWorldStore.getState().enterDepartmentBuilding(id),
       openDept: (id: string | null) => useWorldStore.getState().openDepartment(id),
       enterPortal: (id: string | null) => useWorldStore.getState().enterPortal(id),
       teleport: (pos: [number, number, number]) => useWorldStore.getState().teleportTo(pos),
+      setTimelapse: (s: 0 | 60 | 600) => useWorldStore.getState().setTimelapseSpeed(s),
+      setSunPreset: (p: 'dawn' | 'noon' | 'golden' | 'sanctuaryNight') => {
+        useWorldStore.getState().setSunPreset(p);
+        useWorldStore.setState({ toastMessage: null });
+      },
     };
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (isTextInputFocused(e.target)) return;
       const st = useWorldStore.getState();
       if (e.key === 'Escape') {
+        window.dispatchEvent(new CustomEvent('madinat:escape-cam'));
         if (st.inspectedWorkstation) st.inspectWorkstation(null);
+        else if (st.activeDepartmentId) st.openDepartment(null);
+        else if (st.soukModalOpen) st.setSoukModalOpen(false);
+        else if (st.phoneOpen) st.setPhoneOpen(false);
+        else if (st.builderOpen) st.setBuilderOpen(false);
         else if (st.activePortalId) st.enterPortal(null);
+        else if (st.enteredDepartmentId) st.enterDepartmentBuilding(null);
         return;
       }
       if (e.key === '1') st.setInterfaceMode('garden');
@@ -113,6 +125,7 @@ export const App: React.FC = () => {
     return () => {
       window.removeEventListener('keydown', onKey);
       delete (window as unknown as Record<string, unknown>).__madinatCtl;
+      delete (window as unknown as Record<string, unknown>).__madinatTelemetry;
     };
   }, []);
 

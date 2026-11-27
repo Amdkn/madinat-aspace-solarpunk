@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import { DepartmentStream, PORTAL_GAMES, SOLAR_DEPARTMENTS } from '../data/madinatOntology';
+import { PORTAL_GAMES, SOLAR_DEPARTMENTS } from '../data/madinatOntology';
 import { useWorldStore, VehicleInstance } from '../store/useWorldStore';
 import { solarpunkAudio } from '../audio/solarpunkAudio';
 import { applySolarpunkMaterials } from './ShadersAndMaterials';
@@ -12,30 +12,27 @@ import { ContactShadowDisc } from './ContactShadowDisc';
 import {
   buildWorldTriangleGrid,
   queryMeshFloorHeight,
-  raycastWorldTriangleGrid,
+  resolveBoatLagoonCollisions,
   resolveExteriorCollisions,
   resolveMeshWallCollisions,
   sweepMove,
   WorldTriangleGrid,
 } from './CollisionEngine';
+import {
+  CEO_STREAM,
+  dampAngle,
+  dampScalar,
+  isTextInputFocused,
+  LIVE_WORLD_TELEMETRY,
+  solveSpringArmPullIn,
+  stepToward,
+  WORLD_LAYOUT,
+} from './worldLayout';
 
-const CEO_STREAM: DepartmentStream = {
-  id: 'ceo-a0',
-  agentName: 'CEO A0 Amadeus // Souverain',
-  role: '7D Orchestrateur',
-  task: 'Supervision des 578 Holons & Bouclier A1-Beth sur Bagdad x Apple Park',
-  statusLabel: '[P] SMARTPHONE',
-};
-
-function dampAngle(current: number, target: number, lambda: number, dt: number): number {
-  const diff = Math.atan2(Math.sin(target - current), Math.cos(target - current));
-  return current + diff * (1 - Math.exp(-lambda * dt));
-}
-
-function stepToward(val: number, target: number, maxDelta: number): number {
-  if (Math.abs(target - val) <= maxDelta) return target;
-  return val + Math.sign(target - val) * maxDelta;
-}
+const _extTargetPivot = new THREE.Vector3();
+const _extArmDir = new THREE.Vector3();
+const _extLookTarget = new THREE.Vector3();
+const _extAerialTarget = new THREE.Vector3();
 
 const tmpBox = new THREE.Box3();
 function collectCameraOccluders(scene: THREE.Scene): THREE.Object3D[] {
@@ -74,16 +71,16 @@ const PilotableVehicleModel: React.FC<{
 }> = ({ v, isDriven, speedRef, steerRef }) => {
   const { scene: vehScene } = useGLTF('/models/vehicles_and_flora.glb');
 
-  const { carBody, wheels, boatBody, evtolBody } = useMemo(() => {
+  const { carBody, wheels, boatBody, evtolBody, customPaint } = useMemo(() => {
     const body = vehScene.getObjectByName('Supercar');
-    const customPaint = new THREE.MeshPhysicalMaterial({
+    const cpMat = new THREE.MeshPhysicalMaterial({
       color: v.color,
       roughness: 0.14,
       metalness: 0.84,
       clearcoat: 1.0,
       clearcoatRoughness: 0.08,
     });
-    const cb = body ? applySolarpunkMaterials(body.clone(true), { CarPaint: customPaint }) : new THREE.Group();
+    const cb = body ? applySolarpunkMaterials(body.clone(true), { CarPaint: cpMat }) : new THREE.Group();
 
     const wNames = ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'] as const;
     const ws = wNames.map((n, idx) => {
@@ -100,14 +97,29 @@ const PilotableVehicleModel: React.FC<{
     const ev = vehScene.getObjectByName('Evtol');
     const eb = ev ? applySolarpunkMaterials(ev.clone(true)) : new THREE.Group();
 
-    return { carBody: cb, wheels: ws, boatBody: bb, evtolBody: eb };
+    return { carBody: cb, wheels: ws, boatBody: bb, evtolBody: eb, customPaint: cpMat };
   }, [vehScene, v.color]);
 
+  useEffect(() => () => customPaint.dispose(), [customPaint]);
+  useEffect(() => {
+    if (!LIVE_WORLD_TELEMETRY.vehicles.has(v.id)) {
+      LIVE_WORLD_TELEMETRY.vehicles.set(v.id, { pos: [...v.position], rotY: v.rotationY });
+    }
+  }, [v.id, v.position, v.rotationY]);
+
+  const vehicleRootRef = useRef<THREE.Group>(null);
   const chassisRef = useRef<THREE.Group>(null);
   const wheelRefs = useRef<(THREE.Object3D | null)[]>([]);
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 0.05);
+    if (isDriven && vehicleRootRef.current) {
+      const live = LIVE_WORLD_TELEMETRY.vehicles.get(v.id);
+      if (live) {
+        vehicleRootRef.current.position.set(live.pos[0], live.pos[1], live.pos[2]);
+        vehicleRootRef.current.rotation.y = live.rotY;
+      }
+    }
     if (v.kind === 'car' && isDriven) {
       const spd = speedRef.current;
       const steer = steerRef.current;
@@ -115,23 +127,24 @@ const PilotableVehicleModel: React.FC<{
         if (!wObj) return;
         wObj.rotation.x += (spd * dt) / 0.36;
         if (idx < 2) {
-          wObj.rotation.y = THREE.MathUtils.lerp(wObj.rotation.y, steer * 0.45, 0.25);
+          wObj.rotation.y = dampScalar(wObj.rotation.y, steer * 0.45, 14, dt);
         }
       });
       if (chassisRef.current) {
-        chassisRef.current.rotation.z = THREE.MathUtils.lerp(
+        chassisRef.current.rotation.z = dampScalar(
           chassisRef.current.rotation.z,
           steer * Math.min(1, Math.abs(spd) / 18) * 0.055,
-          0.18,
+          12,
+          dt,
         );
       }
     } else if (chassisRef.current && Math.abs(chassisRef.current.rotation.z) > 0.001) {
-      chassisRef.current.rotation.z = THREE.MathUtils.lerp(chassisRef.current.rotation.z, 0, 0.15);
+      chassisRef.current.rotation.z = dampScalar(chassisRef.current.rotation.z, 0, 10, dt);
     }
   });
 
   return (
-    <group position={v.position} rotation={[0, v.rotationY, 0]}>
+    <group ref={vehicleRootRef} position={v.position} rotation={[0, v.rotationY, 0]}>
       <ContactShadowDisc
         position={[0, 0.03, 0]}
         radius={v.kind === 'evtol' ? 2.4 : 1.75}
@@ -194,7 +207,6 @@ export const PlayerAndVehiclesController: React.FC = () => {
   const gridSigRef = useRef('');
 
   const velY = useRef(0);
-  const tramAngle = useRef(0);
   const debugOverrideCam = useRef<{ pos: THREE.Vector3; lookAt: THREE.Vector3 } | null>(null);
 
   const posRef = useRef(new THREE.Vector3(0, 0.35, 184));
@@ -210,28 +222,22 @@ export const PlayerAndVehiclesController: React.FC = () => {
   const locomotion = useWorldStore((s) => s.locomotion);
   const firstPerson = useWorldStore((s) => s.firstPerson);
   const aerialCam = useWorldStore((s) => s.aerialCam);
-  const teleportTarget = useWorldStore((s) => s.teleportTarget);
   const deployedBlueprints = useWorldStore((s) => s.deployedBlueprints);
   const spawnedStructures = useWorldStore((s) => s.spawnedStructures);
+  const nextGridRetryRef = useRef(0);
 
   const ensureSpatialIndex = () => {
     const sig = `${scene.children.length}:${deployedBlueprints.length}:${spawnedStructures.length}`;
-    if (!worldGridRef.current || worldGridRef.current.triCount < 1000 || gridSigRef.current !== sig) {
-      worldGridRef.current = buildWorldTriangleGrid(scene, 4);
-      occludersRef.current = collectCameraOccluders(scene);
-      gridSigRef.current = sig;
+    if (worldGridRef.current && worldGridRef.current.triCount >= 12000 && gridSigRef.current === sig) return;
+    const now = performance.now();
+    if (worldGridRef.current && worldGridRef.current.triCount < 12000 && now < nextGridRetryRef.current && gridSigRef.current === sig) {
+      return;
     }
+    worldGridRef.current = buildWorldTriangleGrid(scene, 4);
+    occludersRef.current = collectCameraOccluders(scene);
+    gridSigRef.current = sig;
+    nextGridRetryRef.current = now + 450;
   };
-
-  useEffect(() => {
-    if (teleportTarget) {
-      posRef.current.set(teleportTarget[0], teleportTarget[1], teleportTarget[2]);
-      smoothedPivot.current.set(teleportTarget[0], teleportTarget[1] + 1.46, teleportTarget[2]);
-      walkVelRef.current = { x: 0, z: 0 };
-      velY.current = 0;
-      useWorldStore.getState().clearTeleport();
-    }
-  }, [teleportTarget]);
 
   useEffect(() => {
     const st = useWorldStore.getState();
@@ -239,32 +245,38 @@ export const PlayerAndVehiclesController: React.FC = () => {
     currentSteerRef.current = 0;
     walkVelRef.current = { x: 0, z: 0 };
     footSpeedRef.current = 0;
-    if (st.teleportTarget) {
-      posRef.current.set(st.teleportTarget[0], st.teleportTarget[1], st.teleportTarget[2]);
-      smoothedPivot.current.set(st.teleportTarget[0], st.teleportTarget[1] + 1.46, st.teleportTarget[2]);
-      st.clearTeleport();
-    } else if (activeVehicleId) {
+    if (!st.teleportTarget && activeVehicleId) {
+      const live = LIVE_WORLD_TELEMETRY.vehicles.get(activeVehicleId);
       const v = st.vehicles.find((x) => x.id === activeVehicleId);
-      if (v) {
-        posRef.current.set(v.position[0], v.position[1], v.position[2]);
-        rotYRef.current = v.rotationY;
-        targetYaw.current = v.rotationY;
-        smoothedPivot.current.set(v.position[0], v.position[1] + 1.28, v.position[2]);
+      const p = live ? live.pos : v?.position;
+      const r = live ? live.rotY : v?.rotationY ?? 0;
+      if (p) {
+        posRef.current.set(p[0], p[1], p[2]);
+        rotYRef.current = r;
+        targetYaw.current = r;
+        smoothedPivot.current.set(p[0], p[1] + 1.28, p[2]);
       }
     }
   }, [activeVehicleId, locomotion]);
 
   const computeGroundHeight = (x: number, z: number, currentY: number): number => {
     const r = Math.hypot(x, z);
-    if (r > 41.8 && r < 76.2 && Math.abs(x) >= 5.2 && Math.abs(z) >= 5.2) {
+    if (
+      r > WORLD_LAYOUT.LAGOON.waterInnerR &&
+      r < WORLD_LAYOUT.LAGOON.waterOuterR &&
+      Math.abs(x) >= WORLD_LAYOUT.LAGOON.bridgeCorridorHalfW &&
+      Math.abs(z) >= WORLD_LAYOUT.LAGOON.bridgeCorridorHalfW
+    ) {
       return -0.35;
     }
     const meshY = queryMeshFloorHeight(worldGridRef.current, x, z, currentY, 0.72);
     if (meshY !== null) {
-      if (r <= 36.5 && currentY < 1.0 && meshY < 0.485) return 0.485;
+      if (r <= WORLD_LAYOUT.DOME.outerR && currentY < 1.0 && meshY < WORLD_LAYOUT.DOME.groundY) {
+        return WORLD_LAYOUT.DOME.groundY;
+      }
       return meshY;
     }
-    if (r <= 36.5) return currentY > 6.2 ? 8.65 : 0.485;
+    if (r <= WORLD_LAYOUT.DOME.outerR) return currentY > 6.2 ? WORLD_LAYOUT.DOME.s0Y : WORLD_LAYOUT.DOME.groundY;
     if (Math.abs(x) < 6.4 || Math.abs(z) < 6.4) return 0.28;
     return 0.08;
   };
@@ -393,9 +405,12 @@ export const PlayerAndVehiclesController: React.FC = () => {
       lastMouseDragTime.current = 0;
     };
 
+    const clearOverride = () => {
+      debugOverrideCam.current = null;
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (isTextInputFocused(e.target)) return;
 
       const k = e.code;
       keys.current[k] = true;
@@ -428,14 +443,6 @@ export const PlayerAndVehiclesController: React.FC = () => {
         st.toggleCameraPerspective();
       } else if (k === 'KeyR') {
         resetCamera();
-      } else if (k === 'Escape') {
-        debugOverrideCam.current = null;
-        if (st.inspectedWorkstation) st.inspectWorkstation(null);
-        else if (st.activePortalId) st.enterPortal(null);
-        else if (st.activeDepartmentId) st.openDepartment(null);
-        else if (st.soukModalOpen) st.setSoukModalOpen(false);
-        else if (st.phoneOpen) st.setPhoneOpen(false);
-        else if (st.builderOpen) st.setBuilderOpen(false);
       }
     };
 
@@ -483,6 +490,7 @@ export const PlayerAndVehiclesController: React.FC = () => {
     window.addEventListener('mousemove', onMouseMove);
     dom.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('madinat:reset-camera', resetCamera);
+    window.addEventListener('madinat:escape-cam', clearOverride);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
@@ -494,6 +502,7 @@ export const PlayerAndVehiclesController: React.FC = () => {
       window.removeEventListener('mousemove', onMouseMove);
       dom.removeEventListener('wheel', onWheel);
       window.removeEventListener('madinat:reset-camera', resetCamera);
+      window.removeEventListener('madinat:escape-cam', clearOverride);
     };
   }, [gl]);
 
@@ -519,9 +528,9 @@ export const PlayerAndVehiclesController: React.FC = () => {
     const pos = posRef.current;
 
     if (st.locomotion === 'tram') {
-      tramAngle.current -= dt * 0.18;
-      pos.set(Math.cos(tramAngle.current) * 143, 2.2, Math.sin(tramAngle.current) * 143);
-      rotYRef.current = -tramAngle.current;
+      const tAng = LIVE_WORLD_TELEMETRY.tramAngle;
+      pos.set(Math.cos(tAng) * WORLD_LAYOUT.BOULEVARD.tramR, 2.2, -Math.sin(tAng) * WORLD_LAYOUT.BOULEVARD.tramR);
+      rotYRef.current = tAng;
       footSpeedRef.current = 0;
     } else if (st.locomotion === 'car' || st.locomotion === 'boat') {
       footSpeedRef.current = 0;
@@ -566,16 +575,9 @@ export const PlayerAndVehiclesController: React.FC = () => {
         pos.z = cz;
         pos.y = Math.max(0.12, computeGroundHeight(pos.x, pos.z, pos.y) - 0.04);
       } else {
-        const r = Math.hypot(wantX, wantZ);
-        if (r < 44 || r > 74) {
-          const clamped = THREE.MathUtils.clamp(r, 44.2, 73.8);
-          const ang = Math.atan2(wantZ, wantX);
-          pos.x = Math.cos(ang) * clamped;
-          pos.z = Math.sin(ang) * clamped;
-        } else {
-          pos.x = wantX;
-          pos.z = wantZ;
-        }
+        const [bx, bz] = resolveBoatLagoonCollisions(wantX, wantZ, 1.4);
+        pos.x = bx;
+        pos.z = bz;
         pos.y = -0.25;
       }
 
@@ -584,7 +586,7 @@ export const PlayerAndVehiclesController: React.FC = () => {
         targetYaw.current = dampAngle(targetYaw.current, rotYRef.current, 4.2, dt);
       }
       if (st.activeVehicleId) {
-        st.updateVehicleTransform(st.activeVehicleId, [pos.x, pos.y, pos.z], rotYRef.current);
+        LIVE_WORLD_TELEMETRY.vehicles.set(st.activeVehicleId, { pos: [pos.x, pos.y, pos.z], rotY: rotYRef.current });
       }
     } else if (st.locomotion === 'evtol') {
       footSpeedRef.current = 0;
@@ -599,7 +601,7 @@ export const PlayerAndVehiclesController: React.FC = () => {
         targetYaw.current = dampAngle(targetYaw.current, rotYRef.current, 3.2, dt);
       }
       if (st.activeVehicleId) {
-        st.updateVehicleTransform(st.activeVehicleId, [pos.x, pos.y, pos.z], rotYRef.current);
+        LIVE_WORLD_TELEMETRY.vehicles.set(st.activeVehicleId, { pos: [pos.x, pos.y, pos.z], rotY: rotYRef.current });
       }
     } else if (st.locomotion === 'parachute') {
       footSpeedRef.current = 0;
@@ -611,7 +613,7 @@ export const PlayerAndVehiclesController: React.FC = () => {
       const gY = computeGroundHeight(pos.x, pos.z, pos.y);
       if (pos.y <= gY + 0.3) {
         pos.y = gY;
-        st.landOnGround();
+        st.landOnGround(gY);
       }
     } else {
       // Grounded onFoot movement: matched 1:1 with leg stride + universal sub-stepped collisions
@@ -677,7 +679,10 @@ export const PlayerAndVehiclesController: React.FC = () => {
     pos.x = THREE.MathUtils.clamp(pos.x, -360, 360);
     pos.z = THREE.MathUtils.clamp(pos.z, -360, 360);
 
-    st.setPlayerTransform([pos.x, pos.y, pos.z], rotYRef.current);
+    LIVE_WORLD_TELEMETRY.playerPos[0] = pos.x;
+    LIVE_WORLD_TELEMETRY.playerPos[1] = pos.y;
+    LIVE_WORLD_TELEMETRY.playerPos[2] = pos.z;
+    LIVE_WORLD_TELEMETRY.playerRotY = rotYRef.current;
     if (avatarGroupRef.current) {
       avatarGroupRef.current.position.copy(pos);
       avatarGroupRef.current.rotation.y = rotYRef.current;
@@ -694,23 +699,20 @@ export const PlayerAndVehiclesController: React.FC = () => {
     } else if (st.aerialCam) {
       const cx = Math.sin(camYaw.current) * 235;
       const cz = Math.cos(camYaw.current) * 235;
-      camera.position.lerp(new THREE.Vector3(cx, 145, cz), 0.08);
+      _extAerialTarget.set(cx, 145, cz);
+      camera.position.lerp(_extAerialTarget, 1 - Math.exp(-6 * dt));
       camera.lookAt(0, 8, 0);
     } else if (st.firstPerson && st.locomotion === 'onFoot') {
       camera.position.set(pos.x, pos.y + 1.68, pos.z);
-      const lookTarget = new THREE.Vector3(
+      _extLookTarget.set(
         pos.x - Math.sin(camYaw.current) * 10,
         pos.y + 1.62 - Math.sin(camPitch.current - 0.24) * 6,
         pos.z - Math.cos(camYaw.current) * 10,
       );
-      camera.lookAt(lookTarget);
+      camera.lookAt(_extLookTarget);
     } else {
-      const targetPivot = new THREE.Vector3(
-        pos.x,
-        pos.y + (st.locomotion === 'car' ? 1.28 : 1.46),
-        pos.z,
-      );
-      smoothedPivot.current.lerp(targetPivot, 1 - Math.exp(-22 * dt));
+      _extTargetPivot.set(pos.x, pos.y + (st.locomotion === 'car' ? 1.28 : 1.46), pos.z);
+      smoothedPivot.current.lerp(_extTargetPivot, 1 - Math.exp(-22 * dt));
       const desiredDist =
         st.locomotion === 'evtol'
           ? Math.max(11.0, camDist.current * 2.2)
@@ -719,61 +721,42 @@ export const PlayerAndVehiclesController: React.FC = () => {
             : camDist.current;
 
       const cosP = Math.cos(camPitch.current);
-      const armDir = new THREE.Vector3(
-        Math.sin(camYaw.current) * cosP,
-        Math.sin(camPitch.current),
-        Math.cos(camYaw.current) * cosP,
-      ).normalize();
+      _extArmDir
+        .set(
+          Math.sin(camYaw.current) * cosP,
+          Math.sin(camPitch.current),
+          Math.cos(camYaw.current) * cosP,
+        )
+        .normalize();
 
-      let safeDist = desiredDist;
-      const occluders = occludersRef.current;
-      if (st.locomotion !== 'evtol' && st.locomotion !== 'parachute') {
-        const rightX = Math.cos(camYaw.current);
-        const rightZ = -Math.sin(camYaw.current);
-        const ray = raycasterRef.current;
-        for (const offset of [0, -0.36, 0.36]) {
-          const rx = smoothedPivot.current.x + rightX * offset;
-          const ry = smoothedPivot.current.y;
-          const rz = smoothedPivot.current.z + rightZ * offset;
-          // 1. Double-sided spatial-grid architectural mesh raycast (handles all walls, piers & stairs)
-          const gHit = raycastWorldTriangleGrid(
-            worldGridRef.current,
-            rx,
-            ry,
-            rz,
-            armDir.x,
-            armDir.y,
-            armDir.z,
-            desiredDist + 0.45,
-          );
-          if (gHit !== null && gHit < desiredDist + 0.42) {
-            safeDist = Math.min(safeDist, Math.max(0.78, gHit - 0.42));
-          }
-          // 2. Scene mesh raycast (catches ArchGlass curtain walls, Mission Control panel & dynamic props)
-          if (occluders.length > 0) {
-            ray.set(new THREE.Vector3(rx, ry, rz), armDir);
-            ray.near = 0.12;
-            ray.far = desiredDist + 0.45;
-            const hits = ray.intersectObjects(occluders, false);
-            if (hits.length > 0 && hits[0].distance < desiredDist + 0.42) {
-              safeDist = Math.min(safeDist, Math.max(0.78, hits[0].distance - 0.42));
-            }
-          }
-        }
-      }
+      let safeDist =
+        st.locomotion !== 'evtol' && st.locomotion !== 'parachute'
+          ? solveSpringArmPullIn(
+              smoothedPivot.current,
+              camYaw.current,
+              _extArmDir,
+              desiredDist,
+              [0, -0.36, 0.36],
+              worldGridRef.current,
+              occludersRef.current,
+              raycasterRef.current,
+              0.78,
+              0.42,
+            )
+          : desiredDist;
 
-      const testCamX = smoothedPivot.current.x + armDir.x * safeDist;
-      const testCamZ = smoothedPivot.current.z + armDir.z * safeDist;
+      const testCamX = smoothedPivot.current.x + _extArmDir.x * safeDist;
+      const testCamZ = smoothedPivot.current.z + _extArmDir.z * safeDist;
       const floorMinY = computeGroundHeight(testCamX, testCamZ, pos.y) + 0.42;
-      if (smoothedPivot.current.y + armDir.y * safeDist < floorMinY && armDir.y < 0) {
-        const maxArm = (floorMinY - smoothedPivot.current.y) / (armDir.y - 1e-4);
+      if (smoothedPivot.current.y + _extArmDir.y * safeDist < floorMinY && _extArmDir.y < 0) {
+        const maxArm = (floorMinY - smoothedPivot.current.y) / (_extArmDir.y - 1e-4);
         if (maxArm > 0.85) safeDist = Math.min(safeDist, maxArm);
       }
 
       const pullLambda = safeDist < effectiveDist.current ? 34 : 7;
       effectiveDist.current = THREE.MathUtils.lerp(effectiveDist.current, safeDist, 1 - Math.exp(-pullLambda * dt));
 
-      camera.position.copy(smoothedPivot.current).addScaledVector(armDir, effectiveDist.current);
+      camera.position.copy(smoothedPivot.current).addScaledVector(_extArmDir, effectiveDist.current);
       camera.lookAt(smoothedPivot.current);
     }
 
@@ -783,7 +766,10 @@ export const PlayerAndVehiclesController: React.FC = () => {
 
     if (st.locomotion === 'onFoot') {
       for (const v of st.vehicles) {
-        const d = Math.hypot(pos.x - v.position[0], pos.z - v.position[2]);
+        const liveV = LIVE_WORLD_TELEMETRY.vehicles.get(v.id);
+        const vx = liveV ? liveV.pos[0] : v.position[0];
+        const vz = liveV ? liveV.pos[2] : v.position[2];
+        const d = Math.hypot(pos.x - vx, pos.z - vz);
         if (d < 7.0 && d < bestDist) {
           bestDist = d;
           bestHint = {
@@ -795,11 +781,23 @@ export const PlayerAndVehiclesController: React.FC = () => {
           };
         }
       }
+      const tramAng = LIVE_WORLD_TELEMETRY.tramAngle;
+      const tramX = Math.cos(tramAng) * WORLD_LAYOUT.BOULEVARD.tramR;
+      const tramZ = -Math.sin(tramAng) * WORLD_LAYOUT.BOULEVARD.tramR;
+      if (Math.hypot(pos.x - tramX, pos.z - tramZ) < 10.0) {
+        bestHint = {
+          label: '[E] Monter à bord : Tramway Magnétique Solaire',
+          action: () => {
+            st.boardTram();
+            solarpunkAudio.playChime(true);
+          },
+        };
+      }
     }
 
     if (!st.rogueDroneNeutralized) {
-      const rx = Math.cos(st.rogueDroneAngle) * 134;
-      const rz = Math.sin(st.rogueDroneAngle) * 134;
+      const rx = Math.cos(LIVE_WORLD_TELEMETRY.rogueDroneAngle) * 134;
+      const rz = Math.sin(LIVE_WORLD_TELEMETRY.rogueDroneAngle) * 134;
       if (Math.hypot(pos.x - rx, pos.z - rz) < 14) {
         bestHint = {
           label: '[E] ⚡ VERROUILLER LE DRONE IA FANTÔME (CONCORDIA TTL 300s)',
@@ -812,7 +810,7 @@ export const PlayerAndVehiclesController: React.FC = () => {
     }
 
     // CEO A0 Amadeus Workstation Screen Access inside Bayt al-Hikma Ground Floor
-    if (Math.hypot(pos.x, pos.z + 13.6) < 3.4 && pos.y < 4) {
+    if (Math.hypot(pos.x, pos.z - WORLD_LAYOUT.CEO_STATION.deskZ) < WORLD_LAYOUT.CEO_STATION.interactR && pos.y < 4) {
       bestHint = {
         label: '[E] 🖥️ Accéder à l’Écran Souverain : CEO A0 Amadeus',
         action: () => {
@@ -822,7 +820,11 @@ export const PlayerAndVehiclesController: React.FC = () => {
       };
     }
 
-    if (Math.hypot(pos.x, pos.z - 10.5) < 5.5 && pos.y > 6) {
+    if (
+      Math.hypot(pos.x - WORLD_LAYOUT.DOME.s0Escrow.x, pos.z - WORLD_LAYOUT.DOME.s0Escrow.z) <
+        WORLD_LAYOUT.DOME.s0Escrow.interactR &&
+      pos.y > 6
+    ) {
       bestHint = {
         label: '[E] Apposer la Signature Souveraine human:amdkn (Escrow > 10 000 €)',
         action: () => {

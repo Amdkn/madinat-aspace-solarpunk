@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Outlines, useGLTF } from '@react-three/drei';
+import { Outlines, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { DepartmentStream, SolarDepartment } from '../data/madinatOntology';
@@ -97,7 +97,30 @@ function cloneAndPaintPiece(
   return c;
 }
 
-// Crisp high-contrast frosted pill label facing the player from every angle (with distance scaling & occlusion safety)
+interface PillRegistration {
+  group: THREE.Group;
+  mesh: THREE.Mesh;
+  minDist: number;
+  maxDist: number;
+}
+const ACTIVE_PILLS = new Set<PillRegistration>();
+const _pillWorldPos = new THREE.Vector3();
+
+// Centralized 1-hook manager for all 3D pill billboards (eliminates dozens of individual useFrame subscriptions)
+export const PillBillboardManager: React.FC = () => {
+  useFrame(({ camera }) => {
+    ACTIVE_PILLS.forEach((entry) => {
+      entry.group.quaternion.copy(camera.quaternion);
+      const d = entry.group.getWorldPosition(_pillWorldPos).distanceTo(camera.position);
+      entry.group.visible = d >= entry.minDist && d <= entry.maxDist;
+      const s = d < 3.4 ? Math.max(0.55, d / 3.4) : 1;
+      entry.mesh.scale.set(s, s, 1);
+    });
+  });
+  return null;
+};
+
+// Crisp high-contrast frosted pill label facing the player from every angle (with distance scaling & texture disposal)
 export const PillBillboardTag: React.FC<{
   position: [number, number, number];
   title: string;
@@ -110,25 +133,28 @@ export const PillBillboardTag: React.FC<{
 }> = ({ position, title, subtitle, accentColor = '#14b8a6', urgent = false, width = 2.4, minDist = 1.75, maxDist = 34 }) => {
   const billRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Mesh>(null);
-  const tmpV = useMemo(() => new THREE.Vector3(), []);
   const tex = useMemo(
     () => createPillBadgeTexture(title, subtitle, accentColor, urgent),
     [title, subtitle, accentColor, urgent],
   );
-  useFrame(({ camera }) => {
-    if (!billRef.current || !meshRef.current) return;
-    const d = billRef.current.getWorldPosition(tmpV).distanceTo(camera.position);
-    billRef.current.visible = d >= minDist && d <= maxDist;
-    const s = d < 3.4 ? Math.max(0.55, d / 3.4) : 1;
-    meshRef.current.scale.set(s, s, 1);
-  });
+  useEffect(() => () => tex.dispose(), [tex]);
+  useEffect(() => {
+    const group = billRef.current;
+    const mesh = meshRef.current;
+    if (!group || !mesh) return;
+    const reg: PillRegistration = { group, mesh, minDist, maxDist };
+    ACTIVE_PILLS.add(reg);
+    return () => {
+      ACTIVE_PILLS.delete(reg);
+    };
+  }, [minDist, maxDist]);
   return (
-    <Billboard ref={billRef} position={position}>
+    <group ref={billRef} position={position}>
       <mesh ref={meshRef} userData={{ ignoreCameraRay: true }}>
         <planeGeometry args={[width, width * (116 / 680)]} />
         <meshBasicMaterial map={tex} transparent alphaTest={0.08} toneMapped={false} />
       </mesh>
-    </Billboard>
+    </group>
   );
 };
 
@@ -253,6 +279,8 @@ export const CubeFarmWorkstation: React.FC<{
     const stex = createTerminalScreenTexture(stream, deptColor, needsHuman);
     return { mugObj: mug, booksObj: books, succObj: succ, screenTex: stex, kbTex: getKeyboardTexture() };
   }, [propsScene, plantsScene, stream, deptColor, needsHuman, phaseOffset]);
+
+  useEffect(() => () => screenTex.dispose(), [screenTex]);
 
   const shortName = stream.agentName.split('//')[0].trim();
   const deskWood = toonMat('#dfa968');
@@ -471,6 +499,8 @@ export const PersianCarpet: React.FC<{
     return t;
   }, [accentColor]);
 
+  useEffect(() => () => tex.dispose(), [tex]);
+
   return (
     <group position={position}>
       {/* Solid 3D woven wool slab eliminating planar Z-fighting at any angle */}
@@ -559,6 +589,8 @@ export const WallKanbanBoard: React.FC<{
     t.anisotropy = 8;
     return t;
   }, [dept]);
+
+  useEffect(() => () => tex.dispose(), [tex]);
 
   return (
     <group position={position} rotation={[0, rotationY, 0]}>

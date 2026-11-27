@@ -1,26 +1,84 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Building2,
   Compass,
-  Crown,
   Layers,
   Mic,
   Monitor,
-  Play,
   Radio,
   Smartphone,
   Sparkles,
-  Sun,
-  Zap,
 } from 'lucide-react';
 import {
   MARKETPLACE_BLUEPRINTS,
-  PORTAL_GAMES,
   SOLAR_DEPARTMENTS,
 } from '../data/madinatOntology';
 import { DepartmentCommandDeck } from './DepartmentCommandDeck';
 import { useWorldStore } from '../store/useWorldStore';
 import { solarpunkAudio } from '../audio/solarpunkAudio';
+import { LIVE_WORLD_TELEMETRY, WORLD_LAYOUT } from '../world/worldLayout';
+
+interface SpeechRecognitionResultLike {
+  results?: { 0?: { 0?: { transcript?: string } } };
+}
+interface SpeechRecognitionLike {
+  lang: string;
+  onresult: ((ev: SpeechRecognitionResultLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+}
+
+const MinimapRadarSvg: React.FC<{ rogueDroneNeutralized: boolean }> = React.memo(({ rogueDroneNeutralized }) => {
+  const playerArrowRef = useRef<SVGGElement>(null);
+  const droneBlipRef = useRef<SVGCircleElement>(null);
+  const mapScale = 76 / 210;
+
+  useEffect(() => {
+    let rafId = 0;
+    const syncRadar = () => {
+      const [pxWorld, , pzWorld] = LIVE_WORLD_TELEMETRY.playerPos;
+      if (playerArrowRef.current) {
+        const px = 85 + pxWorld * mapScale;
+        const pz = 85 + pzWorld * mapScale;
+        const deg = (-LIVE_WORLD_TELEMETRY.playerRotY * 180) / Math.PI;
+        playerArrowRef.current.setAttribute('transform', `translate(${px.toFixed(2)}, ${pz.toFixed(2)}) rotate(${deg.toFixed(1)})`);
+      }
+      if (droneBlipRef.current && !rogueDroneNeutralized) {
+        const rx = 85 + Math.cos(LIVE_WORLD_TELEMETRY.rogueDroneAngle) * 134 * mapScale;
+        const rz = 85 + Math.sin(LIVE_WORLD_TELEMETRY.rogueDroneAngle) * 134 * mapScale;
+        droneBlipRef.current.setAttribute('cx', rx.toFixed(2));
+        droneBlipRef.current.setAttribute('cy', rz.toFixed(2));
+      }
+      rafId = requestAnimationFrame(syncRadar);
+    };
+    rafId = requestAnimationFrame(syncRadar);
+    return () => cancelAnimationFrame(rafId);
+  }, [rogueDroneNeutralized, mapScale]);
+
+  return (
+    <svg width={170} height={170}>
+      {/* Outer Rampart */}
+      <circle cx={85} cy={85} r={WORLD_LAYOUT.CITY_MAX_R * mapScale} fill="none" stroke="rgba(212,162,76,0.35)" strokeWidth={2} />
+      {/* Ring 3 Boulevard */}
+      <circle cx={85} cy={85} r={WORLD_LAYOUT.BOULEVARD.medianR * mapScale} fill="none" stroke="rgba(148,163,184,0.35)" strokeWidth={5} />
+      {/* Ring 2 Apple Park */}
+      <circle cx={85} cy={85} r={WORLD_LAYOUT.RING2.centerR * mapScale} fill="none" stroke="rgba(56,189,248,0.45)" strokeWidth={6} />
+      {/* Ring 1 Emerald Lagoon */}
+      <circle cx={85} cy={85} r={((WORLD_LAYOUT.LAGOON.waterInnerR + WORLD_LAYOUT.LAGOON.waterOuterR) * 0.5) * mapScale} fill="none" stroke="rgba(20,184,166,0.55)" strokeWidth={8} />
+      {/* Ring 0 Golden Dome */}
+      <circle cx={85} cy={85} r={WORLD_LAYOUT.DOME.outerR * mapScale} fill="rgba(245,158,11,0.35)" stroke="#fbbf24" strokeWidth={1.5} />
+      {/* Grand Souk Marker */}
+      <circle cx={85 + WORLD_LAYOUT.GRAND_SOUK.x * mapScale} cy={85 + WORLD_LAYOUT.GRAND_SOUK.z * mapScale} r={4} fill="#f472b6" />
+      {/* Rogue Drone Red Blip */}
+      {!rogueDroneNeutralized && <circle ref={droneBlipRef} cx={85 - 134 * mapScale} cy={85} r={4.5} fill="#ef4444" />}
+      {/* Player Arrow */}
+      <g ref={playerArrowRef} transform="translate(85, 85) rotate(0)">
+        <polygon points="0,-6 5,5 0,2 -5,5" fill="#fef08a" stroke="#0f172a" strokeWidth={1} />
+      </g>
+    </svg>
+  );
+});
 
 // 1. TOP TRIMODAL SWITCHER BAR (Proving seamless 0.5s continuity across Dashboard <-> Web Desktop <-> 3D GTA Solarpunk)
 export const TopTrimodalBar: React.FC = () => {
@@ -282,15 +340,13 @@ export const TopTrimodalBar: React.FC = () => {
 
 // 2. GTA SOLARPUNK CIRCULAR RADAR MINIMAP + MISSIONS TRACKER + INTERACTION PROMPT
 export const World3DHudOverlay: React.FC = () => {
-  const playerPos = useWorldStore((s) => s.playerPos);
-  const playerRotY = useWorldStore((s) => s.playerRotY);
+  LIVE_WORLD_TELEMETRY.hudRenderCount += 1;
   const locomotion = useWorldStore((s) => s.locomotion);
   const interactionHint = useWorldStore((s) => s.interactionHint);
   const aerialCam = useWorldStore((s) => s.aerialCam);
   const toastMessage = useWorldStore((s) => s.toastMessage);
   const missions = useWorldStore((s) => s.missions);
   const completedMissionIds = useWorldStore((s) => s.completedMissionIds);
-  const rogueDroneAngle = useWorldStore((s) => s.rogueDroneAngle);
   const rogueDroneNeutralized = useWorldStore((s) => s.rogueDroneNeutralized);
   const teleportTo = useWorldStore((s) => s.teleportTo);
   const activeDepartmentId = useWorldStore((s) => s.activeDepartmentId);
@@ -306,7 +362,6 @@ export const World3DHudOverlay: React.FC = () => {
   const enteredDepartmentId = useWorldStore((s) => s.enteredDepartmentId);
   const enterDepartmentBuilding = useWorldStore((s) => s.enterDepartmentBuilding);
   const setInterfaceMode = useWorldStore((s) => s.setInterfaceMode);
-  const activePortalId = useWorldStore((s) => s.activePortalId);
   const inspectedWorkstation = useWorldStore((s) => s.inspectedWorkstation);
   const inspectWorkstation = useWorldStore((s) => s.inspectWorkstation);
   const agentDirectives = useWorldStore((s) => s.agentDirectives);
@@ -328,21 +383,14 @@ export const World3DHudOverlay: React.FC = () => {
   const [listeningVoice, setListeningVoice] = useState(false);
   const [missionsExpanded, setMissionsExpanded] = useState(false);
 
-  void activePortalId;
   const activeDept = SOLAR_DEPARTMENTS.find((d) => d.id === activeDepartmentId) ?? null;
 
-  // Map world coordinates [-215..215] to 170x170 radar SVG
-  const mapScale = 76 / 210;
-  const px = 85 + playerPos[0] * mapScale;
-  const pz = 85 + playerPos[2] * mapScale;
-  const rx = 85 + Math.cos(rogueDroneAngle) * 134 * mapScale;
-  const rz = 85 + Math.sin(rogueDroneAngle) * 134 * mapScale;
-
   const startVoiceArchitect = () => {
-    const SpeechRec =
-      (window as unknown as { SpeechRecognition?: new () => any; webkitSpeechRecognition?: new () => any })
-        .SpeechRecognition ||
-      (window as unknown as { webkitSpeechRecognition?: new () => any }).webkitSpeechRecognition;
+    const win = window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    };
+    const SpeechRec = win.SpeechRecognition || win.webkitSpeechRecognition;
     if (!SpeechRec) {
       spawnStructureInFront('pavilion', 'Pavillon Vocal Solaire');
       return;
@@ -350,8 +398,8 @@ export const World3DHudOverlay: React.FC = () => {
     const rec = new SpeechRec();
     rec.lang = 'fr-FR';
     setListeningVoice(true);
-    rec.onresult = (ev: any) => {
-      const transcript: string = ev.results?.[0]?.[0]?.transcript ?? '';
+    rec.onresult = (ev) => {
+      const transcript = ev.results?.[0]?.[0]?.transcript ?? '';
       const low = transcript.toLowerCase();
       if (low.includes('fontaine') || low.includes('eau')) spawnStructureInFront('fountain', `Fontaine · "${transcript}"`);
       else if (low.includes('arbre') || low.includes('jardin') || low.includes('palmier'))
@@ -540,29 +588,7 @@ export const World3DHudOverlay: React.FC = () => {
             position: 'relative',
           }}
         >
-          <svg width={170} height={170}>
-            {/* Outer Rampart */}
-            <circle cx={85} cy={85} r={205 * mapScale} fill="none" stroke="rgba(212,162,76,0.35)" strokeWidth={2} />
-            {/* Ring 3 Boulevard */}
-            <circle cx={85} cy={85} r={134 * mapScale} fill="none" stroke="rgba(148,163,184,0.35)" strokeWidth={5} />
-            {/* Ring 2 Apple Park */}
-            <circle cx={85} cy={85} r={99 * mapScale} fill="none" stroke="rgba(56,189,248,0.45)" strokeWidth={6} />
-            {/* Ring 1 Emerald Lagoon */}
-            <circle cx={85} cy={85} r={59 * mapScale} fill="none" stroke="rgba(20,184,166,0.55)" strokeWidth={8} />
-            {/* Ring 0 Golden Dome */}
-            <circle cx={85} cy={85} r={34 * mapScale} fill="rgba(245,158,11,0.35)" stroke="#fbbf24" strokeWidth={1.5} />
-
-            {/* Grand Souk Marker */}
-            <circle cx={85 + 138 * mapScale} cy={85 + 138 * mapScale} r={4} fill="#f472b6" />
-
-            {/* Rogue Drone Red Blip */}
-            {!rogueDroneNeutralized && <circle cx={rx} cy={rz} r={4.5} fill="#ef4444" />}
-
-            {/* Player Arrow */}
-            <g transform={`translate(${px}, ${pz}) rotate(${(-playerRotY * 180) / Math.PI})`}>
-              <polygon points="0,-6 5,5 0,2 -5,5" fill="#fef08a" stroke="#0f172a" strokeWidth={1} />
-            </g>
-          </svg>
+          <MinimapRadarSvg rogueDroneNeutralized={rogueDroneNeutralized} />
           <div
             style={{
               position: 'absolute',
